@@ -1,0 +1,6 @@
+- insert:
+    - id: cachescope
+      name: '@kober-basket/dsh-cachescope'
+      config:
+        captureInput: full
+        includeAuxiliary: false
