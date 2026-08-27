@@ -46,12 +46,13 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     .panel-head > div:first-child { min-width:0; }
     .panel-title { font-weight:700; }
     .panel-sub { margin-top:2px; overflow:hidden; color:var(--muted); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
-    .filters { display:flex; gap:8px; }
-    select { border:1px solid #cfd9df; background:#fff; color:#25343e; border-radius:6px; padding:7px 28px 7px 9px; font:inherit; font-size:12px; }
+    .filter-bar { display:grid; grid-template-columns:minmax(180px,1fr) repeat(3,auto); gap:8px; padding:9px 10px; border-bottom:1px solid var(--line); background:#fbfcfd; }
+    select, input[type="search"] { min-width:0; border:1px solid #cfd9df; background:#fff; color:#25343e; border-radius:6px; padding:7px 9px; font:inherit; font-size:12px; }
+    select { padding-right:28px; }
     button { border:1px solid #cbd7dd; border-radius:6px; background:#fff; color:#314550; padding:6px 9px; font:inherit; font-size:11px; cursor:pointer; white-space:nowrap; }
     button:hover { border-color:#8eb2bf; background:#f2f8fa; }
     button:disabled { cursor:not-allowed; opacity:.5; }
-    button:focus-visible, select:focus-visible, tbody tr:focus-visible, summary:focus-visible { outline:2px solid #1294b5; outline-offset:2px; }
+    button:focus-visible, select:focus-visible, input:focus-visible, tbody tr:focus-visible, summary:focus-visible { outline:2px solid #1294b5; outline-offset:2px; }
     .button-quiet { background:transparent; }
     .table-wrap { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
     table { width:100%; border-collapse:separate; border-spacing:0; font-size:12px; }
@@ -169,7 +170,8 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     </section>
     <section class="workspace">
       <div class="panel attempts-panel">
-        <div class="panel-head"><div><div class="panel-title">模型调用 Attempt</div><div class="panel-sub" id="countText">0 条记录</div></div><div class="filters"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select></div></div>
+        <div class="panel-head"><div><div class="panel-title">模型调用 Attempt</div><div class="panel-sub" id="countText">0 条记录</div></div></div>
+        <div class="filter-bar"><label class="sr-only" for="queryFilter">搜索调用</label><input type="search" id="queryFilter" placeholder="搜索 Call / Session / Provider / Model"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select><label class="sr-only" for="evidenceFilter">按证据组合筛选</label><select id="evidenceFilter"><option value="">全部证据组合</option><option value="friendly-read">前缀友好 · 有读取</option><option value="friendly-zero">前缀友好 · 读取为 0</option><option value="changed-read">前缀变化 · 仍有读取</option><option value="changed-zero">前缀变化 · 读取为 0</option><option value="unresolved">不可交叉判断</option></select></div>
         <div class="table-wrap"><table aria-label="模型调用记录"><thead><tr><th scope="col">时间</th><th scope="col">Session / Call</th><th scope="col">模型</th><th scope="col">供应商缓存读取</th><th scope="col">未缓存 / Prompt</th><th scope="col">Call TTFT</th><th scope="col">DSH 输入变化</th></tr></thead><tbody id="attemptRows"></tbody></table></div>
       </div>
       <aside class="panel detail"><div class="panel-head"><div><div class="panel-title" id="detailTitle">调用详情</div><div class="panel-sub" id="detailSub">自动显示最新一条记录</div></div><div class="detail-head-actions"><button type="button" class="button-quiet" id="jumpToJson">查看输入</button><button type="button" class="button-quiet" id="focusDetail" aria-pressed="false">专注详情</button></div></div><div class="detail-scroll" id="detailScroll"><div id="detailBody" class="empty">这里会显示 Token 证据、分段指纹和本次完整逻辑输入。</div></div></aside>
@@ -211,11 +213,31 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       if (kind === 'history-rewritten' || kind === 'system-changed' || kind === 'tools-changed') return 'warn'
       return ''
     }
+    function evidenceBucket(item) {
+      const comparablePrefix = item.diagnosis.kind !== 'first-observation' && item.diagnosis.kind !== 'route-or-options-changed'
+      if (!comparablePrefix || !item.usage || item.usage.cacheReadTokens === undefined) return 'unresolved'
+      const prefixFriendly = item.diagnosis.kind === 'identical-input' || item.diagnosis.kind === 'append-only'
+      const hasRead = item.usage.cacheReadTokens > 0
+      if (prefixFriendly) return hasRead ? 'friendly-read' : 'friendly-zero'
+      return hasRead ? 'changed-read' : 'changed-zero'
+    }
     function visibleAttempts() {
       if (!state.snapshot) return []
       const session = byId('sessionFilter').value
       const purpose = byId('purposeFilter').value
-      return state.snapshot.attempts.filter(item => (!session || (item.sessionId || '') === session) && (!purpose || item.purpose === purpose))
+      const evidence = byId('evidenceFilter').value
+      const query = byId('queryFilter').value.trim().toLocaleLowerCase()
+      return state.snapshot.attempts.filter(item => {
+        if (session && (item.sessionId || '') !== session) return false
+        if (purpose && item.purpose !== purpose) return false
+        if (evidence && evidenceBucket(item) !== evidence) return false
+        if (!query) return true
+        return [item.id, item.sessionId, item.provider, item.model, item.purpose, item.diagnosis.kind]
+          .filter(Boolean)
+          .join('\\n')
+          .toLocaleLowerCase()
+          .includes(query)
+      })
     }
     function summarizeAttempts(items) {
       const summary = { attemptCount:items.length, comparablePrefixAttempts:0, prefixFriendlyAttempts:0, reportedCacheAttempts:0, promptTokens:0, inputTokens:0, cacheReadTokens:0, outputTokens:0, firstTokens:[], estimatedCost:0, pricedAttempts:0, currency:null, reportedPromptTokens:0, correlation:{ comparedAttempts:0, prefixFriendlyWithRead:0, prefixFriendlyWithoutRead:0, prefixChangedWithRead:0, prefixChangedWithoutRead:0 } }
@@ -265,8 +287,12 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     function currentFilterLabel() {
       const purpose = byId('purposeFilter').value
       const session = byId('sessionFilter').value
+      const evidence = byId('evidenceFilter').value
+      const query = byId('queryFilter').value.trim()
       const parts = [purpose ? (purposeName[purpose] || purpose) : '全部用途']
       if (session) parts.push(shortSession(session))
+      if (evidence) parts.push(byId('evidenceFilter').selectedOptions[0].textContent)
+      if (query) parts.push('搜索 “' + query + '”')
       return parts.join(' · ')
     }
     function renderSummary() {
@@ -377,7 +403,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     function renderRows() {
       const body = byId('attemptRows')
       const items = visibleAttempts()
-      byId('countText').textContent = items.length + ' 条记录 · 每次重试单独计数'
+      byId('countText').textContent = items.length + ' / ' + state.snapshot.attempts.length + ' 条记录 · 每次重试单独计数'
       const rows = new Map(Array.from(body.querySelectorAll('tr')).map(row => [row.dataset.attemptId, row]))
       items.forEach((item, index) => {
         const row = rows.get(item.id) || createAttemptRow()
@@ -861,6 +887,8 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     function renderFilteredWorkspace() { renderSummary(); renderWorkspace() }
     byId('sessionFilter').addEventListener('change', renderFilteredWorkspace)
     byId('purposeFilter').addEventListener('change', renderFilteredWorkspace)
+    byId('evidenceFilter').addEventListener('change', renderFilteredWorkspace)
+    byId('queryFilter').addEventListener('input', renderFilteredWorkspace)
     byId('jumpToJson').addEventListener('click', () => {
       const raw = document.querySelector('.raw-section')
       if (raw) raw.scrollIntoView({ block:'start' })

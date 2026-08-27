@@ -413,6 +413,39 @@ describe('dashboard interactions', () => {
     assert.match(document.querySelector('#correlationNote')?.textContent ?? '', /已交叉 4 次/)
   })
 
+  it('filters attempts by text and evidence combination', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    const changed = structuredClone(snapshot.attempts[0]!)
+    changed.id = 'call-needle'
+    changed.provider = 'alternate-provider'
+    changed.diagnosis.kind = 'system-changed'
+    changed.usage!.cacheReadTokens = 0
+    changed.usage!.cacheReadRatio = 0
+    snapshot.attempts.push(changed)
+    const { dom } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+    const document = dom.window.document
+    const query = document.querySelector<HTMLInputElement>('#queryFilter')
+    const evidence = document.querySelector<HTMLSelectElement>('#evidenceFilter')
+    assert.ok(query)
+    assert.ok(evidence)
+
+    query.value = 'alternate-provider'
+    query.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(document.querySelectorAll('tbody tr').length, 1)
+    assert.equal(document.querySelector('tbody tr')?.getAttribute('data-attempt-id'), 'call-needle')
+
+    query.value = ''
+    query.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    evidence.value = 'friendly-read'
+    evidence.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(document.querySelectorAll('tbody tr').length, 1)
+    assert.equal(document.querySelector('tbody tr')?.getAttribute('data-attempt-id'), 'call-1')
+    assert.match(document.querySelector('#countText')?.textContent ?? '', /1 \/ 2 条记录/)
+  })
+
   it('renders complete input as a lazily disclosed JSON hierarchy', async (t) => {
     const { dom } = await renderTestDashboard()
     t.after(() => { dom.window.close() })
