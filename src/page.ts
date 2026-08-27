@@ -175,7 +175,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     <section class="workspace">
       <div class="panel attempts-panel">
         <div class="panel-head"><div><div class="panel-title">模型调用 Attempt</div><div class="panel-sub" id="countText">0 条记录</div></div><button type="button" class="button-quiet" id="copyDiagnostics">复制当前诊断</button><span class="sr-only" id="copyDiagnosticsStatus" aria-live="polite"></span></div>
-        <div class="filter-bar"><label class="sr-only" for="queryFilter">搜索调用</label><input type="search" id="queryFilter" placeholder="搜索 Call / Session / Provider / Model"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="providerFilter">按 Provider 筛选</label><select id="providerFilter"><option value="">全部 Provider</option></select><label class="sr-only" for="modelFilter">按模型筛选</label><select id="modelFilter"><option value="">全部模型</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select><label class="sr-only" for="statusFilter">按调用状态筛选</label><select id="statusFilter"><option value="">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option><option value="cancelled">已取消</option><option value="consumer-stopped">消费端停止</option><option value="incomplete">未完成</option></select><label class="sr-only" for="evidenceFilter">按证据组合筛选</label><select id="evidenceFilter"><option value="">全部证据组合</option><option value="friendly-read">前缀友好 · 有读取</option><option value="friendly-zero">前缀友好 · 读取为 0</option><option value="changed-read">前缀变化 · 仍有读取</option><option value="changed-zero">前缀变化 · 读取为 0</option><option value="unresolved">不可交叉判断</option></select></div>
+        <div class="filter-bar"><label class="sr-only" for="queryFilter">搜索调用</label><input type="search" id="queryFilter" placeholder="搜索 Call / Session / Provider / Model"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="providerFilter">按 Provider 筛选</label><select id="providerFilter"><option value="">全部 Provider</option></select><label class="sr-only" for="modelFilter">按模型筛选</label><select id="modelFilter"><option value="">全部模型</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select><label class="sr-only" for="statusFilter">按调用状态筛选</label><select id="statusFilter"><option value="">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option><option value="cancelled">已取消</option><option value="consumer-stopped">消费端停止</option><option value="incomplete">未完成</option></select><label class="sr-only" for="evidenceFilter">按证据组合筛选</label><select id="evidenceFilter"><option value="">全部证据组合</option><option value="friendly-read">前缀友好 · 有读取</option><option value="friendly-zero">前缀友好 · 读取为 0</option><option value="changed-read">前缀变化 · 仍有读取</option><option value="changed-zero">前缀变化 · 读取为 0</option><option value="unresolved">不可交叉判断</option></select><label class="sr-only" for="sortOrder">调用排序</label><select id="sortOrder"><option value="newest">最新优先</option><option value="oldest">最早优先</option><option value="cache-desc">Cache 命中率高优先</option><option value="ttft-desc">TTFT 慢优先</option></select></div>
         <div class="table-wrap"><table aria-label="模型调用记录"><thead><tr><th scope="col">时间</th><th scope="col">Session / Call</th><th scope="col">模型</th><th scope="col">供应商缓存读取</th><th scope="col">未缓存 / Prompt</th><th scope="col">Call TTFT</th><th scope="col">DSH 输入变化</th></tr></thead><tbody id="attemptRows"></tbody></table></div>
       </div>
       <aside class="panel detail"><div class="panel-head"><div><div class="panel-title" id="detailTitle">调用详情</div><div class="panel-sub" id="detailSub">自动显示最新一条记录</div></div><div class="detail-head-actions"><button type="button" class="button-quiet" id="jumpToJson">查看输入</button><button type="button" class="button-quiet" id="focusDetail" aria-pressed="false">专注详情</button></div></div><div class="detail-scroll" id="detailScroll"><div id="detailBody" class="empty">这里会显示 Token 证据、分段指纹和本次完整逻辑输入。</div></div></aside>
@@ -234,7 +234,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       const status = byId('statusFilter').value
       const evidence = byId('evidenceFilter').value
       const query = byId('queryFilter').value.trim().toLocaleLowerCase()
-      return state.snapshot.attempts.filter(item => {
+      const attempts = state.snapshot.attempts.filter(item => {
         if (session && (item.sessionId || '') !== session) return false
         if (provider && item.provider !== provider) return false
         if (model && item.model !== model) return false
@@ -248,6 +248,11 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
           .toLocaleLowerCase()
           .includes(query)
       })
+      const sort = byId('sortOrder').value
+      if (sort === 'oldest') return attempts.sort((a, b) => a.startedAt - b.startedAt)
+      if (sort === 'cache-desc') return attempts.sort((a, b) => (b.usage && b.usage.cacheReadRatio !== undefined ? b.usage.cacheReadRatio : -1) - (a.usage && a.usage.cacheReadRatio !== undefined ? a.usage.cacheReadRatio : -1) || b.startedAt - a.startedAt)
+      if (sort === 'ttft-desc') return attempts.sort((a, b) => (b.firstTokenMs === undefined ? -1 : b.firstTokenMs) - (a.firstTokenMs === undefined ? -1 : a.firstTokenMs) || b.startedAt - a.startedAt)
+      return attempts.sort((a, b) => b.startedAt - a.startedAt)
     }
     function summarizeAttempts(items) {
       const summary = { attemptCount:items.length, comparablePrefixAttempts:0, prefixFriendlyAttempts:0, reportedCacheAttempts:0, promptTokens:0, inputTokens:0, cacheReadTokens:0, outputTokens:0, firstTokens:[], estimatedCost:0, pricedAttempts:0, currency:null, reportedPromptTokens:0, correlation:{ comparedAttempts:0, prefixFriendlyWithRead:0, prefixFriendlyWithoutRead:0, prefixChangedWithRead:0, prefixChangedWithoutRead:0 } }
@@ -304,6 +309,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       const model = byId('modelFilter').value
       const status = byId('statusFilter').value
       const evidence = byId('evidenceFilter').value
+      const sort = byId('sortOrder').value
       const query = byId('queryFilter').value.trim()
       const parts = [purpose ? (purposeName[purpose] || purpose) : '全部用途']
       if (session) parts.push(shortSession(session))
@@ -311,6 +317,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       if (model) parts.push(model)
       if (status) parts.push(byId('statusFilter').selectedOptions[0].textContent)
       if (evidence) parts.push(byId('evidenceFilter').selectedOptions[0].textContent)
+      if (sort !== 'newest') parts.push(byId('sortOrder').selectedOptions[0].textContent)
       if (query) parts.push('搜索 “' + query + '”')
       return parts.join(' · ')
     }
@@ -946,6 +953,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     byId('purposeFilter').addEventListener('change', renderFilteredWorkspace)
     byId('statusFilter').addEventListener('change', renderFilteredWorkspace)
     byId('evidenceFilter').addEventListener('change', renderFilteredWorkspace)
+    byId('sortOrder').addEventListener('change', renderFilteredWorkspace)
     byId('queryFilter').addEventListener('input', renderFilteredWorkspace)
     byId('copyDiagnostics').addEventListener('click', () => { void copyFilteredDiagnostics() })
     byId('refreshNow').addEventListener('click', () => { void reload(true) })

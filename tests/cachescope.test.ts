@@ -495,6 +495,39 @@ describe('dashboard interactions', () => {
     assert.match(document.querySelector('#countText')?.textContent ?? '', /1 \/ 2 条记录/)
   })
 
+  it('sorts attempts by time, cache-read ratio, and Call TTFT', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    const baseStartedAt = snapshot.attempts[0]!.startedAt
+    const lowCacheSlow = structuredClone(snapshot.attempts[0]!)
+    lowCacheSlow.id = 'call-low-cache-slow'
+    lowCacheSlow.startedAt = baseStartedAt - 1_000
+    lowCacheSlow.firstTokenMs = 300
+    lowCacheSlow.usage!.cacheReadRatio = 0.1
+    const highCacheFast = structuredClone(snapshot.attempts[0]!)
+    highCacheFast.id = 'call-high-cache-fast'
+    highCacheFast.startedAt = baseStartedAt + 1_000
+    highCacheFast.firstTokenMs = 10
+    highCacheFast.usage!.cacheReadRatio = 0.95
+    snapshot.attempts.push(lowCacheSlow, highCacheFast)
+    const { dom } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+    const document = dom.window.document
+    const sort = document.querySelector<HTMLSelectElement>('#sortOrder')
+    assert.ok(sort)
+    const rowIds = (): (string | null)[] => Array.from(document.querySelectorAll('tbody tr'), row => row.getAttribute('data-attempt-id'))
+
+    assert.deepEqual(rowIds(), ['call-high-cache-fast', 'call-1', 'call-low-cache-slow'])
+    sort.value = 'oldest'
+    sort.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    assert.deepEqual(rowIds(), ['call-low-cache-slow', 'call-1', 'call-high-cache-fast'])
+    sort.value = 'cache-desc'
+    sort.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    assert.deepEqual(rowIds(), ['call-high-cache-fast', 'call-1', 'call-low-cache-slow'])
+    sort.value = 'ttft-desc'
+    sort.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    assert.deepEqual(rowIds(), ['call-low-cache-slow', 'call-1', 'call-high-cache-fast'])
+  })
+
   it('renders complete input as a lazily disclosed JSON hierarchy', async (t) => {
     const { dom } = await renderTestDashboard()
     t.after(() => { dom.window.close() })
