@@ -32,6 +32,7 @@ To disable prompt-text retention, add this row to the profile's `cordis.patch.ym
 - Local prefix classification for unchanged input, append-only growth, system changes, tool changes, and rewritten history.
 - A lazily expanded JSON hierarchy that marks stable candidates, the first local difference, downstream content, and regions without a comparable baseline.
 - Session and purpose filters that recompute the visible summary while retaining retries as separate attempts.
+- Copyable filtered diagnostic metadata for issues and discussions without complete prompt content.
 
 ## How to read the evidence
 

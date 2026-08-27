@@ -172,7 +172,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     </section>
     <section class="workspace">
       <div class="panel attempts-panel">
-        <div class="panel-head"><div><div class="panel-title">模型调用 Attempt</div><div class="panel-sub" id="countText">0 条记录</div></div></div>
+        <div class="panel-head"><div><div class="panel-title">模型调用 Attempt</div><div class="panel-sub" id="countText">0 条记录</div></div><button type="button" class="button-quiet" id="copyDiagnostics">复制当前诊断</button><span class="sr-only" id="copyDiagnosticsStatus" aria-live="polite"></span></div>
         <div class="filter-bar"><label class="sr-only" for="queryFilter">搜索调用</label><input type="search" id="queryFilter" placeholder="搜索 Call / Session / Provider / Model"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select><label class="sr-only" for="evidenceFilter">按证据组合筛选</label><select id="evidenceFilter"><option value="">全部证据组合</option><option value="friendly-read">前缀友好 · 有读取</option><option value="friendly-zero">前缀友好 · 读取为 0</option><option value="changed-read">前缀变化 · 仍有读取</option><option value="changed-zero">前缀变化 · 读取为 0</option><option value="unresolved">不可交叉判断</option></select></div>
         <div class="table-wrap"><table aria-label="模型调用记录"><thead><tr><th scope="col">时间</th><th scope="col">Session / Call</th><th scope="col">模型</th><th scope="col">供应商缓存读取</th><th scope="col">未缓存 / Prompt</th><th scope="col">Call TTFT</th><th scope="col">DSH 输入变化</th></tr></thead><tbody id="attemptRows"></tbody></table></div>
       </div>
@@ -299,6 +299,32 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       if (evidence) parts.push(byId('evidenceFilter').selectedOptions[0].textContent)
       if (query) parts.push('搜索 “' + query + '”')
       return parts.join(' · ')
+    }
+    async function copyFilteredDiagnostics() {
+      const status = byId('copyDiagnosticsStatus')
+      if (!state.snapshot) {
+        status.textContent = '暂无可复制的诊断数据'
+        return
+      }
+      const attempts = visibleAttempts()
+      const summary = { ...summarizeAttempts(attempts) }
+      delete summary.firstTokens
+      delete summary.reportedPromptTokens
+      delete summary.pricedAttempts
+      delete summary.currency
+      const payload = {
+        generatedAt: state.snapshot.generatedAt,
+        filter: currentFilterLabel(),
+        summary,
+        attempts,
+        notes: state.snapshot.notes,
+      }
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
+        status.textContent = '已复制当前筛选的诊断元数据，不包含完整输入正文'
+      } catch {
+        status.textContent = '复制失败，请检查浏览器剪贴板权限'
+      }
     }
     function renderSummary() {
       const s = summarizeAttempts(visibleAttempts())
@@ -899,6 +925,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     byId('purposeFilter').addEventListener('change', renderFilteredWorkspace)
     byId('evidenceFilter').addEventListener('change', renderFilteredWorkspace)
     byId('queryFilter').addEventListener('input', renderFilteredWorkspace)
+    byId('copyDiagnostics').addEventListener('click', () => { void copyFilteredDiagnostics() })
     byId('refreshNow').addEventListener('click', () => { void reload(true) })
     byId('togglePolling').addEventListener('click', () => {
       state.paused = !state.paused

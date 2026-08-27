@@ -565,6 +565,36 @@ describe('dashboard interactions', () => {
     assert.equal(requests.filter(url => url === '/cachescope/api').length, 3)
   })
 
+  it('copies filtered diagnostic metadata without complete prompt content', async (t) => {
+    const { dom } = await renderTestDashboard()
+    t.after(() => { dom.window.close() })
+    let copied = ''
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (value: string) => { copied = value } },
+    })
+
+    const button = dom.window.document.querySelector<HTMLButtonElement>('#copyDiagnostics')
+    assert.ok(button)
+    button.click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+
+    const payload = JSON.parse(copied) as {
+      filter: string
+      summary: { attemptCount: number, firstTokens?: unknown }
+      attempts: Array<{ id: string, rawInput?: unknown }>
+    }
+    assert.equal(payload.filter, '对话')
+    assert.equal(payload.summary.attemptCount, 1)
+    assert.equal(payload.summary.firstTokens, undefined)
+    assert.equal(payload.attempts[0]?.id, 'call-1')
+    assert.equal(payload.attempts[0]?.rawInput, undefined)
+    assert.match(
+      dom.window.document.querySelector('#copyDiagnosticsStatus')?.textContent ?? '',
+      /不包含完整输入正文/,
+    )
+  })
+
   it('keeps keyboard focus on the keyed attempt row across selection and polling', async (t) => {
     const { dom, poll } = await renderTestDashboard()
     t.after(() => { dom.window.close() })
