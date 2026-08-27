@@ -9,7 +9,7 @@ import LlmRuntime, {
 } from '@deepseek-ai/dsh-llm'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { JSDOM } from 'jsdom'
-import { analyzeInput, diagnosePrefix } from '../src/analysis.ts'
+import { analyzeInput, diagnosePrefix, stableJson } from '../src/analysis.ts'
 import * as CacheScopePlugin from '../src/index.ts'
 import { renderDashboardPage } from '../src/page.ts'
 import type { DiagnosticsConfig } from '../src/types.ts'
@@ -197,6 +197,18 @@ async function renderTestDashboard(
 }
 
 describe('CacheScope input analysis', () => {
+  it('fingerprints JSON-compatible optional fields without dropping the attempt', () => {
+    const sparse = Array.from({ length: 3 })
+    sparse[0] = 'kept'
+
+    assert.equal(
+      stableJson({ z: undefined, a: sparse, b: Number.NaN, c: () => 'ignored' }),
+      '{"a":["kept",null,null],"b":null}',
+    )
+    assert.equal(stableJson({ b: 1, a: 2 }), '{"a":2,"b":1}')
+    assert.throws(() => stableJson(1n), /unsupported input value: bigint/)
+  })
+
   it('separates provider usage field absence from a reported zero', () => {
     const absent = normalizeUsage({ inputTokens: 10, outputTokens: 2 })
     const zero = normalizeUsage({ inputTokens: 10, outputTokens: 2, cacheReadTokens: 0 })

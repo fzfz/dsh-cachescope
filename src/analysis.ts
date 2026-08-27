@@ -10,16 +10,32 @@ import type {
 
 const HMAC_KEY = randomBytes(32)
 
-/** Deterministically serialize the lossless-JSON values accepted by this module. */
+function stablePrimitive(value: string | boolean | number): string {
+  const serialized = JSON.stringify(value)
+  if (serialized === undefined) throw new Error(`unsupported input value: ${typeof value}`)
+  return serialized
+}
+
+function omittedByJson(value: unknown): boolean {
+  return value === undefined || typeof value === 'function' || typeof value === 'symbol'
+}
+
+/** Deterministically serialize values with the same omission rules as JSON.stringify. */
 export function stableJson(value: unknown): string {
   if (value === null) return 'null'
   if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') {
-    return JSON.stringify(value)
+    return stablePrimitive(value)
   }
   if (typeof value !== 'object') throw new Error(`unsupported input value: ${typeof value}`)
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (Array.isArray(value)) {
+    return `[${Array.from(value, item => omittedByJson(item) ? 'null' : stableJson(item)).join(',')}]`
+  }
   const record = value as Record<string, unknown>
-  return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`
+  const entries = Object.keys(record)
+    .sort()
+    .filter(key => !omittedByJson(record[key]))
+    .map(key => `${stablePrimitive(key)}:${stableJson(record[key])}`)
+  return `{${entries.join(',')}}`
 }
 
 function fingerprint(serialized: string): string {
