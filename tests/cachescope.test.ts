@@ -537,6 +537,32 @@ describe('dashboard interactions', () => {
     assert.equal(requests.filter(url => url.startsWith('/cachescope/api/input')).length, 1)
   })
 
+  it('pauses scheduled polling while keeping manual refresh available', async (t) => {
+    const { dom, poll, requests } = await renderTestDashboard()
+    t.after(() => { dom.window.close() })
+    const document = dom.window.document
+    const toggle = document.querySelector<HTMLButtonElement>('#togglePolling')
+    const refresh = document.querySelector<HTMLButtonElement>('#refreshNow')
+    assert.ok(toggle)
+    assert.ok(refresh)
+
+    toggle.click()
+    assert.equal(toggle.getAttribute('aria-pressed'), 'true')
+    await poll()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(requests.filter(url => url === '/cachescope/api').length, 1)
+
+    refresh.click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(requests.filter(url => url === '/cachescope/api').length, 2)
+    assert.match(document.querySelector('#liveState')?.textContent ?? '', /^已暂停/)
+
+    toggle.click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(toggle.getAttribute('aria-pressed'), 'false')
+    assert.equal(requests.filter(url => url === '/cachescope/api').length, 3)
+  })
+
   it('keeps keyboard focus on the keyed attempt row across selection and polling', async (t) => {
     const { dom, poll } = await renderTestDashboard()
     t.after(() => { dom.window.close() })

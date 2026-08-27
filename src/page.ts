@@ -15,6 +15,8 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     .subtitle { color:#9fc0ca; font-size:12px; margin-top:3px; }
     .header-state { display:flex; gap:10px; align-items:center; }
     .pill { display:inline-flex; align-items:center; gap:7px; border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:6px 10px; font-size:12px; color:#cce1e7; }
+    .header-button { border-color:rgba(255,255,255,.22); background:transparent; color:#d7e8ed; }
+    .header-button:hover { border-color:rgba(255,255,255,.42); background:rgba(255,255,255,.08); }
     .dot { width:7px; height:7px; border-radius:50%; background:#38d1a8; box-shadow:0 0 0 4px rgba(56,209,168,.12); }
     main { padding:22px 28px 30px; }
     .notice { display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:start; padding:13px 16px; margin-bottom:16px; border:1px solid #edc995; background:#fff8ec; border-radius:8px; color:#6e4b1e; }
@@ -148,7 +150,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
 <body>
   <header>
     <div><h1>CacheScope</h1><div class="subtitle">DeepSeek Harness · 逐次调用、稳定前缀与 Prefill 代理指标</div></div>
-    <div class="header-state"><span class="pill"><span class="dot"></span><span id="liveState" aria-live="polite">等待数据</span></span><span class="pill" id="captureMode">读取配置</span></div>
+    <div class="header-state"><span class="pill"><span class="dot"></span><span id="liveState" aria-live="polite">等待数据</span></span><span class="pill" id="captureMode">读取配置</span><button type="button" class="header-button" id="refreshNow">立即刷新</button><button type="button" class="header-button" id="togglePolling" aria-pressed="false">暂停刷新</button></div>
   </header>
   <main>
     <section class="notice"><strong>证据分层</strong><p id="evidenceNote">供应商 usage 决定真实缓存 Token；输入对比只用于解释“哪里发生了变化”。</p></section>
@@ -182,7 +184,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     const API = '/cachescope/api'
     const INPUT_API = '/cachescope/api/input'
     const REFRESH_MS = ${refreshMs}
-    const state = { snapshot:null, selectedId:null, renderedDetailId:null, detailSignature:null, openJsonPaths:new Set(['$']), rawInput:null, rawLoadedKey:null, rawLoadingKey:null, rawErrorKey:null, rawLoadError:null, reloading:false }
+    const state = { snapshot:null, selectedId:null, renderedDetailId:null, detailSignature:null, openJsonPaths:new Set(['$']), rawInput:null, rawLoadedKey:null, rawLoadingKey:null, rawErrorKey:null, rawLoadError:null, reloading:false, paused:false, lastUpdatedLabel:null }
     const byId = id => document.getElementById(id)
     const number = value => new Intl.NumberFormat('zh-CN').format(value || 0)
     const percent = value => value === undefined ? '—' : (value * 100).toFixed(1) + '%'
@@ -869,17 +871,22 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       }
       else renderEmptyDetail()
     }
-    async function reload() {
+    function showLiveState(text) {
+      byId('liveState').textContent = state.paused ? '已暂停 · ' + text : text
+    }
+    async function reload(force) {
+      if (state.paused && !force) return
       if (state.reloading) return
       state.reloading = true
       try {
         const response = await fetch(API, { cache:'no-store', credentials:'same-origin' })
         if (!response.ok) throw new Error('HTTP ' + response.status)
         state.snapshot = await response.json()
-        byId('liveState').textContent = '已连接 · ' + new Date(state.snapshot.generatedAt).toLocaleTimeString('zh-CN', { hour12:false })
+        state.lastUpdatedLabel = new Date(state.snapshot.generatedAt).toLocaleTimeString('zh-CN', { hour12:false })
+        showLiveState('已连接 · ' + state.lastUpdatedLabel)
         renderSessions(); renderSummary(); renderWorkspace()
       } catch (error) {
-        byId('liveState').textContent = '连接失败 · ' + (error && error.message ? error.message : String(error))
+        showLiveState('连接失败 · ' + (error && error.message ? error.message : String(error)))
       } finally {
         state.reloading = false
       }
@@ -889,6 +896,15 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     byId('purposeFilter').addEventListener('change', renderFilteredWorkspace)
     byId('evidenceFilter').addEventListener('change', renderFilteredWorkspace)
     byId('queryFilter').addEventListener('input', renderFilteredWorkspace)
+    byId('refreshNow').addEventListener('click', () => { void reload(true) })
+    byId('togglePolling').addEventListener('click', () => {
+      state.paused = !state.paused
+      const button = byId('togglePolling')
+      button.textContent = state.paused ? '继续刷新' : '暂停刷新'
+      button.setAttribute('aria-pressed', String(state.paused))
+      if (state.paused) showLiveState(state.lastUpdatedLabel ? '已连接 · ' + state.lastUpdatedLabel : '等待数据')
+      else void reload(true)
+    })
     byId('jumpToJson').addEventListener('click', () => {
       const raw = document.querySelector('.raw-section')
       if (raw) raw.scrollIntoView({ block:'start' })
@@ -899,8 +915,8 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       byId('focusDetail').textContent = focused ? '返回列表' : '专注详情'
       byId('focusDetail').setAttribute('aria-pressed', String(focused))
     })
-    reload()
-    setInterval(reload, REFRESH_MS)
+    void reload(true)
+    setInterval(() => { void reload(false) }, REFRESH_MS)
   </script>
 </body>
 </html>`
