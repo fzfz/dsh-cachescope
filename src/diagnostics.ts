@@ -61,6 +61,13 @@ function median(values: number[]): number | undefined {
   return (values[middle - 1]! + values[middle]!) / 2
 }
 
+function nearestRank(values: number[], percentile: number): number | undefined {
+  if (values.length === 0) return undefined
+  const ordered = [...values].sort((a, b) => a - b)
+  const rank = Math.max(1, Math.ceil(ordered.length * percentile))
+  return ordered[rank - 1]
+}
+
 function isComparablePrefix(attempt: CacheAttempt): boolean {
   return attempt.diagnosis.kind !== 'first-observation'
     && attempt.diagnosis.kind !== 'route-or-options-changed'
@@ -291,6 +298,7 @@ export class CacheScope extends Service {
       ? undefined
       : prefixFriendlyAttempts / comparablePrefixAttempts
     const medianFirstTokenMs = median(firstTokenValues)
+    const p95FirstTokenMs = nearestRank(firstTokenValues, 0.95)
     return {
       attemptCount: this.attempts.length,
       completedCount: this.attempts.filter(attempt => attempt.status === 'completed').length,
@@ -306,6 +314,7 @@ export class CacheScope extends Service {
       ...prefixFriendlyRatio === undefined ? {} : { prefixFriendlyRatio },
       reportedCacheAttempts,
       ...medianFirstTokenMs === undefined ? {} : { medianFirstTokenMs: roundedMilliseconds(medianFirstTokenMs) },
+      ...p95FirstTokenMs === undefined ? {} : { p95FirstTokenMs: roundedMilliseconds(p95FirstTokenMs) },
       ...pricedAttempts === 0 || this.config.pricing === undefined
         ? {}
         : { estimatedCost: { amount: estimatedCost, currency: this.config.pricing.currency } },

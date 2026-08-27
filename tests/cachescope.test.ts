@@ -101,6 +101,7 @@ const DASHBOARD_SNAPSHOT = {
     promptTokens: 100,
     cacheReadRatio: 0.8,
     medianFirstTokenMs: 42,
+    p95FirstTokenMs: 42,
   },
   attempts: [{
     id: 'call-1',
@@ -253,6 +254,7 @@ describe('dashboard interactions', () => {
     assert.match(provider.textContent ?? '', /适配器归一化未缓存\s*20/)
     assert.ok(provider.querySelector('[data-cache-segment="hit"]'))
     assert.ok(provider.querySelector('[data-cache-segment="miss"]'))
+    assert.equal(document.querySelector('#ttft')?.textContent, '42.0 ms / 42.0 ms')
     assert.equal(document.querySelector('#prefixRatio')?.textContent, '100.0%')
     assert.match(document.querySelector('#prefixRatioNote')?.textContent ?? '', /1 \/ 1 次可比较调用/)
 
@@ -633,6 +635,23 @@ describe('llm/stream observation', () => {
     assert.equal(summary.prefixFriendlyRatio, 1)
     assert.equal(summary.correlation.comparedAttempts, 1)
     assert.equal(summary.correlation.prefixFriendlyWithRead, 1)
+  })
+
+  it('reports median and nearest-rank P95 Call TTFT', async (t) => {
+    const ctx = await setup()
+    t.after(async () => { await ctx.root.fiber.dispose() })
+    for (let index = 1; index <= 20; index++) {
+      const handle = ctx.cacheScope.begin(
+        request({ messages: [message(`request-${index}`)] }),
+        'conversation',
+      )
+      handle.record.firstTokenMs = index * 10
+      ctx.cacheScope.complete(handle)
+    }
+
+    const summary = ctx.cacheScope.snapshot().summary
+    assert.equal(summary.medianFirstTokenMs, 105)
+    assert.equal(summary.p95FirstTokenMs, 190)
   })
 
   it('rethrows synchronous next and iteration failures without replacing their identity', async (t) => {

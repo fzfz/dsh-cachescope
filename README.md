@@ -28,7 +28,7 @@ To disable prompt-text retention, add this row to the profile's `cordis.patch.ym
 ## What it shows
 
 - Provider-normalized Cache Read, uncached input, Cache Write, output, and weighted cache-read ratio.
-- Per-attempt Call TTFT, total duration, status, purpose, provider, model, and optional cost estimate.
+- Per-attempt Call TTFT, median and P95 Call TTFT, total duration, status, purpose, provider, model, and optional cost estimate.
 - Local prefix classification for unchanged input, append-only growth, system changes, tool changes, and rewritten history.
 - A lazily expanded JSON hierarchy that marks stable candidates, the first local difference, downstream content, and regions without a comparable baseline.
 - Session and purpose filters that recompute the visible summary while retaining retries as separate attempts.

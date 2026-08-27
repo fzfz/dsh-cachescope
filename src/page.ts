@@ -158,7 +158,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       <div class="kpi"><div class="kpi-label">Cache Read Token 加权占比 · 当前筛选</div><div class="kpi-value" id="cacheRatio">—</div><div class="kpi-note" id="cacheRatioNote">当前筛选仅统计 Harness usage 携带 cache_read 的调用</div></div>
       <div class="kpi"><div class="kpi-label">本地前缀友好率</div><div class="kpi-value" id="prefixRatio">—</div><div class="kpi-note" id="prefixRatioNote">排除首次观察与模型/参数变化</div></div>
       <div class="kpi"><div class="kpi-label">未缓存输入 Token</div><div class="kpi-value" id="inputTokens">0</div><div class="kpi-note" id="promptTokens">总 Prompt 0</div></div>
-      <div class="kpi"><div class="kpi-label">中位 Call TTFT</div><div class="kpi-value" id="ttft">—</div><div class="kpi-note">含排队与网络，不等于纯 Prefill</div></div>
+      <div class="kpi"><div class="kpi-label">中位 / P95 Call TTFT</div><div class="kpi-value" id="ttft">—</div><div class="kpi-note">含排队与网络，不等于纯 Prefill</div></div>
       <div class="kpi"><div class="kpi-label">模型成本（估算）</div><div class="kpi-value" id="cost">—</div><div class="kpi-note" id="costNote">需在插件配置中填写单价</div></div>
     </section>
     <section class="correlation" aria-label="Provider Cache Read 与本地前缀的交叉统计">
@@ -282,6 +282,9 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
         : summary.firstTokens.length % 2 === 1
           ? summary.firstTokens[middle]
           : (summary.firstTokens[middle - 1] + summary.firstTokens[middle]) / 2
+      summary.p95FirstTokenMs = summary.firstTokens.length === 0
+        ? undefined
+        : summary.firstTokens[Math.max(0, Math.ceil(summary.firstTokens.length * 0.95) - 1)]
       summary.cacheReadRatio = summary.reportedPromptTokens === 0 ? undefined : summary.cacheReadTokens / summary.reportedPromptTokens
       summary.prefixFriendlyRatio = summary.comparablePrefixAttempts === 0 ? undefined : summary.prefixFriendlyAttempts / summary.comparablePrefixAttempts
       return summary
@@ -310,7 +313,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       byId('correlationNote').textContent = '已交叉 ' + s.correlation.comparedAttempts + ' 次；首次观察、模型/参数变化与未携带 Cache Read 字段的调用不进入矩阵'
       byId('inputTokens').textContent = number(s.inputTokens)
       byId('promptTokens').textContent = '总 Prompt ' + number(s.promptTokens) + ' · Cache Read ' + number(s.cacheReadTokens)
-      byId('ttft').textContent = ms(s.medianFirstTokenMs)
+      byId('ttft').textContent = ms(s.medianFirstTokenMs) + ' / ' + ms(s.p95FirstTokenMs)
       if (s.pricedAttempts > 0 && s.currency) {
         byId('cost').textContent = s.currency + ' ' + s.estimatedCost.toFixed(5)
         byId('costNote').textContent = '按插件配置单价估算，不是账单'

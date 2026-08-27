@@ -160,6 +160,7 @@ export interface DiagnosticsSummary {
   prefixFriendlyRatio?: number
   reportedCacheAttempts: number
   medianFirstTokenMs?: number
+  p95FirstTokenMs?: number
   estimatedCost?: CostEstimate
 }
 
