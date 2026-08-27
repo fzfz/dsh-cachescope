@@ -97,6 +97,15 @@ export interface CostEstimate {
   currency: string
 }
 
+/** Cross-tabulation of provider Cache Read evidence and comparable local prefix state. */
+export interface EvidenceCorrelation {
+  comparedAttempts: number
+  prefixFriendlyWithRead: number
+  prefixFriendlyWithoutRead: number
+  prefixChangedWithRead: number
+  prefixChangedWithoutRead: number
+}
+
 /** Lifecycle outcome of one invocation of the llm/stream waterfall. */
 export type AttemptStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'consumer-stopped' | 'incomplete'
 
@@ -146,6 +155,7 @@ export interface DiagnosticsSummary {
   cacheReadTokens: number
   cacheWriteTokens: number
   outputTokens: number
+  correlation: EvidenceCorrelation
   cacheReadRatio?: number
   prefixFriendlyRatio?: number
   reportedCacheAttempts: number

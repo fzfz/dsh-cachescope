@@ -15,6 +15,7 @@ import type {
   DiagnosticsConfig,
   DiagnosticsSnapshot,
   DiagnosticsSummary,
+  EvidenceCorrelation,
   InputAnalysis,
 } from './types.ts'
 import { normalizeUsage } from './types.ts'
@@ -58,6 +59,16 @@ function median(values: number[]): number | undefined {
   const middle = Math.floor(values.length / 2)
   if (values.length % 2 === 1) return values[middle]!
   return (values[middle - 1]! + values[middle]!) / 2
+}
+
+function isComparablePrefix(attempt: CacheAttempt): boolean {
+  return attempt.diagnosis.kind !== 'first-observation'
+    && attempt.diagnosis.kind !== 'route-or-options-changed'
+}
+
+function isPrefixFriendly(attempt: CacheAttempt): boolean {
+  return attempt.diagnosis.kind === 'identical-input'
+    || attempt.diagnosis.kind === 'append-only'
 }
 
 /** Bounded in-memory service behind CacheScope's diagnostics queries. */
@@ -230,20 +241,29 @@ export class CacheScope extends Service {
     let pricedAttempts = 0
     let comparablePrefixAttempts = 0
     let prefixFriendlyAttempts = 0
+    const correlation: EvidenceCorrelation = {
+      comparedAttempts: 0,
+      prefixFriendlyWithRead: 0,
+      prefixFriendlyWithoutRead: 0,
+      prefixChangedWithRead: 0,
+      prefixChangedWithoutRead: 0,
+    }
     const firstTokenValues: number[] = []
 
     for (const attempt of this.attempts) {
-      if (
-        attempt.diagnosis.kind !== 'first-observation'
-        && attempt.diagnosis.kind !== 'route-or-options-changed'
-      ) {
+      const comparablePrefix = isComparablePrefix(attempt)
+      const prefixFriendly = isPrefixFriendly(attempt)
+      if (comparablePrefix) {
         comparablePrefixAttempts++
-        if (
-          attempt.diagnosis.kind === 'identical-input'
-          || attempt.diagnosis.kind === 'append-only'
-        ) {
-          prefixFriendlyAttempts++
-        }
+        if (prefixFriendly) prefixFriendlyAttempts++
+      }
+      if (comparablePrefix && attempt.usage?.cacheReadTokens !== undefined) {
+        correlation.comparedAttempts++
+        const hasRead = attempt.usage.cacheReadTokens > 0
+        if (prefixFriendly && hasRead) correlation.prefixFriendlyWithRead++
+        else if (prefixFriendly) correlation.prefixFriendlyWithoutRead++
+        else if (hasRead) correlation.prefixChangedWithRead++
+        else correlation.prefixChangedWithoutRead++
       }
       if (attempt.firstTokenMs !== undefined) firstTokenValues.push(attempt.firstTokenMs)
       const usage = attempt.usage
@@ -281,6 +301,7 @@ export class CacheScope extends Service {
       cacheReadTokens,
       cacheWriteTokens,
       outputTokens,
+      correlation,
       ...cacheReadRatio === undefined ? {} : { cacheReadRatio },
       ...prefixFriendlyRatio === undefined ? {} : { prefixFriendlyRatio },
       reportedCacheAttempts,

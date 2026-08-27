@@ -26,7 +26,18 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     .kpi-label { color:var(--muted); font-size:12px; margin-bottom:6px; }
     .kpi-value { font-size:27px; line-height:1.1; font-weight:720; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
     .kpi-note { margin-top:6px; color:#8a98a3; font-size:11px; }
-    .workspace { height:max(400px,calc(100vh - 315px)); display:grid; grid-template-columns:minmax(620px,1.15fr) minmax(470px,.85fr); gap:16px; align-items:stretch; }
+    .correlation { display:flex; align-items:stretch; gap:14px; margin-bottom:16px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--white); box-shadow:var(--shadow); }
+    .correlation-copy { width:230px; flex:none; display:flex; flex-direction:column; justify-content:center; }
+    .correlation-copy strong { font-size:12px; }
+    .correlation-copy span { margin-top:3px; color:var(--muted); font-size:10px; }
+    .correlation-grid { flex:1; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+    .correlation-cell { min-width:0; padding:7px 9px; border-radius:7px; background:#f2f5f6; color:#52636d; }
+    .correlation-cell span { display:block; overflow:hidden; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+    .correlation-cell strong { display:block; margin-top:2px; color:var(--ink); font-size:18px; font-variant-numeric:tabular-nums; }
+    .correlation-cell.good { background:var(--green-soft); }
+    .correlation-cell.warn { background:var(--amber-soft); }
+    .correlation-cell.bad { background:var(--red-soft); }
+    .workspace { height:max(400px,calc(100vh - 395px)); display:grid; grid-template-columns:minmax(620px,1.15fr) minmax(470px,.85fr); gap:16px; align-items:stretch; }
     .workspace.detail-focus { grid-template-columns:minmax(0,1fr); }
     .workspace.detail-focus .attempts-panel { display:none; }
     .panel { min-width:0; background:var(--white); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); overflow:hidden; }
@@ -147,6 +158,15 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       <div class="kpi"><div class="kpi-label">中位 Call TTFT</div><div class="kpi-value" id="ttft">—</div><div class="kpi-note">含排队与网络，不等于纯 Prefill</div></div>
       <div class="kpi"><div class="kpi-label">模型成本（估算）</div><div class="kpi-value" id="cost">—</div><div class="kpi-note" id="costNote">需在插件配置中填写单价</div></div>
     </section>
+    <section class="correlation" aria-label="Provider Cache Read 与本地前缀的交叉统计">
+      <div class="correlation-copy"><strong>证据交叉 · 当前筛选</strong><span id="correlationNote">只统计同时具备本地可比基线与 Cache Read 字段的调用</span></div>
+      <div class="correlation-grid">
+        <div class="correlation-cell good"><span>前缀友好 · 有读取</span><strong id="friendlyWithRead">0</strong></div>
+        <div class="correlation-cell warn"><span>前缀友好 · 读取为 0</span><strong id="friendlyWithoutRead">0</strong></div>
+        <div class="correlation-cell warn"><span>前缀变化 · 仍有读取</span><strong id="changedWithRead">0</strong></div>
+        <div class="correlation-cell bad"><span>前缀变化 · 读取为 0</span><strong id="changedWithoutRead">0</strong></div>
+      </div>
+    </section>
     <section class="workspace">
       <div class="panel attempts-panel">
         <div class="panel-head"><div><div class="panel-title">模型调用 Attempt</div><div class="panel-sub" id="countText">0 条记录</div></div><div class="filters"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select></div></div>
@@ -198,11 +218,21 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       return state.snapshot.attempts.filter(item => (!session || (item.sessionId || '') === session) && (!purpose || item.purpose === purpose))
     }
     function summarizeAttempts(items) {
-      const summary = { attemptCount:items.length, comparablePrefixAttempts:0, prefixFriendlyAttempts:0, reportedCacheAttempts:0, promptTokens:0, inputTokens:0, cacheReadTokens:0, outputTokens:0, firstTokens:[], estimatedCost:0, pricedAttempts:0, currency:null, reportedPromptTokens:0 }
+      const summary = { attemptCount:items.length, comparablePrefixAttempts:0, prefixFriendlyAttempts:0, reportedCacheAttempts:0, promptTokens:0, inputTokens:0, cacheReadTokens:0, outputTokens:0, firstTokens:[], estimatedCost:0, pricedAttempts:0, currency:null, reportedPromptTokens:0, correlation:{ comparedAttempts:0, prefixFriendlyWithRead:0, prefixFriendlyWithoutRead:0, prefixChangedWithRead:0, prefixChangedWithoutRead:0 } }
       items.forEach(item => {
-        if (item.diagnosis.kind !== 'first-observation' && item.diagnosis.kind !== 'route-or-options-changed') {
+        const comparablePrefix = item.diagnosis.kind !== 'first-observation' && item.diagnosis.kind !== 'route-or-options-changed'
+        const prefixFriendly = item.diagnosis.kind === 'identical-input' || item.diagnosis.kind === 'append-only'
+        if (comparablePrefix) {
           summary.comparablePrefixAttempts++
-          if (item.diagnosis.kind === 'identical-input' || item.diagnosis.kind === 'append-only') summary.prefixFriendlyAttempts++
+          if (prefixFriendly) summary.prefixFriendlyAttempts++
+        }
+        if (comparablePrefix && item.usage && item.usage.cacheReadTokens !== undefined) {
+          summary.correlation.comparedAttempts++
+          const hasRead = item.usage.cacheReadTokens > 0
+          if (prefixFriendly && hasRead) summary.correlation.prefixFriendlyWithRead++
+          else if (prefixFriendly) summary.correlation.prefixFriendlyWithoutRead++
+          else if (hasRead) summary.correlation.prefixChangedWithRead++
+          else summary.correlation.prefixChangedWithoutRead++
         }
         if (item.firstTokenMs !== undefined) summary.firstTokens.push(item.firstTokenMs)
         if (item.usage) {
@@ -245,6 +275,11 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       byId('cacheRatioNote').textContent = '当前筛选：' + currentFilterLabel() + ' · ' + s.reportedCacheAttempts + ' / ' + s.attemptCount + ' 次调用携带 cache_read'
       byId('prefixRatio').textContent = percent(s.prefixFriendlyRatio)
       byId('prefixRatioNote').textContent = s.prefixFriendlyAttempts + ' / ' + s.comparablePrefixAttempts + ' 次可比较调用保持完整 System、Tools 与历史前缀'
+      byId('friendlyWithRead').textContent = number(s.correlation.prefixFriendlyWithRead)
+      byId('friendlyWithoutRead').textContent = number(s.correlation.prefixFriendlyWithoutRead)
+      byId('changedWithRead').textContent = number(s.correlation.prefixChangedWithRead)
+      byId('changedWithoutRead').textContent = number(s.correlation.prefixChangedWithoutRead)
+      byId('correlationNote').textContent = '已交叉 ' + s.correlation.comparedAttempts + ' 次；首次观察、模型/参数变化与未携带 Cache Read 字段的调用不进入矩阵'
       byId('inputTokens').textContent = number(s.inputTokens)
       byId('promptTokens').textContent = '总 Prompt ' + number(s.promptTokens) + ' · Cache Read ' + number(s.cacheReadTokens)
       byId('ttft').textContent = ms(s.medianFirstTokenMs)

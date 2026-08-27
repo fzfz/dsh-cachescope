@@ -387,6 +387,32 @@ describe('dashboard interactions', () => {
     assert.match(document.querySelector('#cacheRatioNote')?.textContent ?? '', /当前筛选.*2 \/ 2/)
   })
 
+  it('cross-tabulates provider Cache Read with comparable local prefix state', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    const variants = [
+      { id: 'call-2', kind: 'append-only', cacheReadTokens: 0 },
+      { id: 'call-3', kind: 'system-changed', cacheReadTokens: 40 },
+      { id: 'call-4', kind: 'history-rewritten', cacheReadTokens: 0 },
+    ] as const
+    for (const variant of variants) {
+      const attempt = structuredClone(snapshot.attempts[0]!)
+      attempt.id = variant.id
+      attempt.diagnosis.kind = variant.kind
+      attempt.usage!.cacheReadTokens = variant.cacheReadTokens
+      attempt.usage!.cacheReadRatio = variant.cacheReadTokens / attempt.usage!.promptTokens
+      snapshot.attempts.push(attempt)
+    }
+    const { dom } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+    const document = dom.window.document
+
+    assert.equal(document.querySelector('#friendlyWithRead')?.textContent, '1')
+    assert.equal(document.querySelector('#friendlyWithoutRead')?.textContent, '1')
+    assert.equal(document.querySelector('#changedWithRead')?.textContent, '1')
+    assert.equal(document.querySelector('#changedWithoutRead')?.textContent, '1')
+    assert.match(document.querySelector('#correlationNote')?.textContent ?? '', /已交叉 4 次/)
+  })
+
   it('renders complete input as a lazily disclosed JSON hierarchy', async (t) => {
     const { dom } = await renderTestDashboard()
     t.after(() => { dom.window.close() })
@@ -534,6 +560,7 @@ describe('llm/stream observation', () => {
     ]
     for (const input of inputs) {
       const stream = dispatch(ctx, input, () => (async function*() {
+        yield { type: 'usage', usage: { inputTokens: 20, outputTokens: 1, cacheReadTokens: 80 } } as const
         yield { type: 'finish', reason: { kind: 'stop' } } as const
       })())
       for await (const _chunk of stream) {
@@ -545,6 +572,8 @@ describe('llm/stream observation', () => {
     assert.equal(summary.comparablePrefixAttempts, 1)
     assert.equal(summary.prefixFriendlyAttempts, 1)
     assert.equal(summary.prefixFriendlyRatio, 1)
+    assert.equal(summary.correlation.comparedAttempts, 1)
+    assert.equal(summary.correlation.prefixFriendlyWithRead, 1)
   })
 
   it('rethrows synchronous next and iteration failures without replacing their identity', async (t) => {
