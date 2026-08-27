@@ -468,6 +468,33 @@ describe('dashboard interactions', () => {
     assert.match(document.querySelector('#countText')?.textContent ?? '', /1 \/ 2 条记录/)
   })
 
+  it('filters attempts by provider and model route', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    const alternate = structuredClone(snapshot.attempts[0]!)
+    alternate.id = 'call-alternate-route'
+    alternate.provider = 'alternate-provider'
+    alternate.model = 'alternate-model'
+    snapshot.attempts.push(alternate)
+    const { dom } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+    const document = dom.window.document
+    const provider = document.querySelector<HTMLSelectElement>('#providerFilter')
+    const model = document.querySelector<HTMLSelectElement>('#modelFilter')
+    assert.ok(provider)
+    assert.ok(model)
+    assert.deepEqual(Array.from(provider.options, option => option.value), ['', 'test-provider', 'alternate-provider'])
+    assert.deepEqual(Array.from(model.options, option => option.value), ['', 'test-model', 'alternate-model'])
+
+    provider.value = 'alternate-provider'
+    provider.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    model.value = 'alternate-model'
+    model.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(document.querySelectorAll('tbody tr').length, 1)
+    assert.equal(document.querySelector('tbody tr')?.getAttribute('data-attempt-id'), 'call-alternate-route')
+    assert.match(document.querySelector('#countText')?.textContent ?? '', /1 \/ 2 条记录/)
+  })
+
   it('renders complete input as a lazily disclosed JSON hierarchy', async (t) => {
     const { dom } = await renderTestDashboard()
     t.after(() => { dom.window.close() })
