@@ -20,7 +20,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     .notice { display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:start; padding:13px 16px; margin-bottom:16px; border:1px solid #edc995; background:#fff8ec; border-radius:8px; color:#6e4b1e; }
     .notice strong { color:#8c5513; }
     .notice p { margin:2px 0 0; color:#806038; }
-    .kpis { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:10px; background:var(--white); box-shadow:var(--shadow); overflow:hidden; margin-bottom:16px; }
+    .kpis { display:grid; grid-template-columns:repeat(5,1fr); border:1px solid var(--line); border-radius:10px; background:var(--white); box-shadow:var(--shadow); overflow:hidden; margin-bottom:16px; }
     .kpi { padding:17px 20px 15px; border-right:1px solid var(--line); }
     .kpi:last-child { border-right:0; }
     .kpi-label { color:var(--muted); font-size:12px; margin-bottom:6px; }
@@ -142,6 +142,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     <section class="notice"><strong>证据分层</strong><p id="evidenceNote">供应商 usage 决定真实缓存 Token；输入对比只用于解释“哪里发生了变化”。</p></section>
     <section class="kpis">
       <div class="kpi"><div class="kpi-label">Cache Read Token 加权占比 · 当前筛选</div><div class="kpi-value" id="cacheRatio">—</div><div class="kpi-note" id="cacheRatioNote">当前筛选仅统计 Harness usage 携带 cache_read 的调用</div></div>
+      <div class="kpi"><div class="kpi-label">本地前缀友好率</div><div class="kpi-value" id="prefixRatio">—</div><div class="kpi-note" id="prefixRatioNote">排除首次观察与模型/参数变化</div></div>
       <div class="kpi"><div class="kpi-label">未缓存输入 Token</div><div class="kpi-value" id="inputTokens">0</div><div class="kpi-note" id="promptTokens">总 Prompt 0</div></div>
       <div class="kpi"><div class="kpi-label">中位 Call TTFT</div><div class="kpi-value" id="ttft">—</div><div class="kpi-note">含排队与网络，不等于纯 Prefill</div></div>
       <div class="kpi"><div class="kpi-label">模型成本（估算）</div><div class="kpi-value" id="cost">—</div><div class="kpi-note" id="costNote">需在插件配置中填写单价</div></div>
@@ -197,8 +198,12 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       return state.snapshot.attempts.filter(item => (!session || (item.sessionId || '') === session) && (!purpose || item.purpose === purpose))
     }
     function summarizeAttempts(items) {
-      const summary = { attemptCount:items.length, reportedCacheAttempts:0, promptTokens:0, inputTokens:0, cacheReadTokens:0, outputTokens:0, firstTokens:[], estimatedCost:0, pricedAttempts:0, currency:null, reportedPromptTokens:0 }
+      const summary = { attemptCount:items.length, comparablePrefixAttempts:0, prefixFriendlyAttempts:0, reportedCacheAttempts:0, promptTokens:0, inputTokens:0, cacheReadTokens:0, outputTokens:0, firstTokens:[], estimatedCost:0, pricedAttempts:0, currency:null, reportedPromptTokens:0 }
       items.forEach(item => {
+        if (item.diagnosis.kind !== 'first-observation' && item.diagnosis.kind !== 'route-or-options-changed') {
+          summary.comparablePrefixAttempts++
+          if (item.diagnosis.kind === 'identical-input' || item.diagnosis.kind === 'append-only') summary.prefixFriendlyAttempts++
+        }
         if (item.firstTokenMs !== undefined) summary.firstTokens.push(item.firstTokenMs)
         if (item.usage) {
           summary.promptTokens += item.usage.promptTokens
@@ -224,6 +229,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
           ? summary.firstTokens[middle]
           : (summary.firstTokens[middle - 1] + summary.firstTokens[middle]) / 2
       summary.cacheReadRatio = summary.reportedPromptTokens === 0 ? undefined : summary.cacheReadTokens / summary.reportedPromptTokens
+      summary.prefixFriendlyRatio = summary.comparablePrefixAttempts === 0 ? undefined : summary.prefixFriendlyAttempts / summary.comparablePrefixAttempts
       return summary
     }
     function currentFilterLabel() {
@@ -237,6 +243,8 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       const s = summarizeAttempts(visibleAttempts())
       byId('cacheRatio').textContent = percent(s.cacheReadRatio)
       byId('cacheRatioNote').textContent = '当前筛选：' + currentFilterLabel() + ' · ' + s.reportedCacheAttempts + ' / ' + s.attemptCount + ' 次调用携带 cache_read'
+      byId('prefixRatio').textContent = percent(s.prefixFriendlyRatio)
+      byId('prefixRatioNote').textContent = s.prefixFriendlyAttempts + ' / ' + s.comparablePrefixAttempts + ' 次可比较调用保持完整 System、Tools 与历史前缀'
       byId('inputTokens').textContent = number(s.inputTokens)
       byId('promptTokens').textContent = '总 Prompt ' + number(s.promptTokens) + ' · Cache Read ' + number(s.cacheReadTokens)
       byId('ttft').textContent = ms(s.medianFirstTokenMs)

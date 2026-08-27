@@ -139,12 +139,15 @@ export interface CapturedInputSnapshot {
 export interface DiagnosticsSummary {
   attemptCount: number
   completedCount: number
+  comparablePrefixAttempts: number
+  prefixFriendlyAttempts: number
   promptTokens: number
   inputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
   outputTokens: number
   cacheReadRatio?: number
+  prefixFriendlyRatio?: number
   reportedCacheAttempts: number
   medianFirstTokenMs?: number
   estimatedCost?: CostEstimate

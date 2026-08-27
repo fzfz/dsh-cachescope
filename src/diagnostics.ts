@@ -228,9 +228,23 @@ export class CacheScope extends Service {
     let reportedCacheAttempts = 0
     let estimatedCost = 0
     let pricedAttempts = 0
+    let comparablePrefixAttempts = 0
+    let prefixFriendlyAttempts = 0
     const firstTokenValues: number[] = []
 
     for (const attempt of this.attempts) {
+      if (
+        attempt.diagnosis.kind !== 'first-observation'
+        && attempt.diagnosis.kind !== 'route-or-options-changed'
+      ) {
+        comparablePrefixAttempts++
+        if (
+          attempt.diagnosis.kind === 'identical-input'
+          || attempt.diagnosis.kind === 'append-only'
+        ) {
+          prefixFriendlyAttempts++
+        }
+      }
       if (attempt.firstTokenMs !== undefined) firstTokenValues.push(attempt.firstTokenMs)
       const usage = attempt.usage
       if (usage !== undefined) {
@@ -253,16 +267,22 @@ export class CacheScope extends Service {
     const cacheReadRatio = reportedPromptTokens === 0
       ? undefined
       : cacheReadTokens / reportedPromptTokens
+    const prefixFriendlyRatio = comparablePrefixAttempts === 0
+      ? undefined
+      : prefixFriendlyAttempts / comparablePrefixAttempts
     const medianFirstTokenMs = median(firstTokenValues)
     return {
       attemptCount: this.attempts.length,
       completedCount: this.attempts.filter(attempt => attempt.status === 'completed').length,
+      comparablePrefixAttempts,
+      prefixFriendlyAttempts,
       promptTokens,
       inputTokens,
       cacheReadTokens,
       cacheWriteTokens,
       outputTokens,
       ...cacheReadRatio === undefined ? {} : { cacheReadRatio },
+      ...prefixFriendlyRatio === undefined ? {} : { prefixFriendlyRatio },
       reportedCacheAttempts,
       ...medianFirstTokenMs === undefined ? {} : { medianFirstTokenMs: roundedMilliseconds(medianFirstTokenMs) },
       ...pricedAttempts === 0 || this.config.pricing === undefined

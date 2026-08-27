@@ -253,6 +253,8 @@ describe('dashboard interactions', () => {
     assert.match(provider.textContent ?? '', /适配器归一化未缓存\s*20/)
     assert.ok(provider.querySelector('[data-cache-segment="hit"]'))
     assert.ok(provider.querySelector('[data-cache-segment="miss"]'))
+    assert.equal(document.querySelector('#prefixRatio')?.textContent, '100.0%')
+    assert.match(document.querySelector('#prefixRatioNote')?.textContent ?? '', /1 \/ 1 次可比较调用/)
 
     const inference = document.querySelector('[data-cache-evidence="dsh-inferred"]')
     assert.ok(inference)
@@ -521,6 +523,28 @@ describe('llm/stream observation', () => {
     assert.equal(attempt.rawState, 'available')
     assert.equal(Reflect.has(attempt, 'rawInput'), false)
     assert.equal(ctx.cacheScope.input(attempt.id)?.rawInput?.provider, 'test-provider')
+  })
+
+  it('summarizes append-only requests as locally prefix-friendly', async (t) => {
+    const ctx = await setup()
+    t.after(async () => { await ctx.root.fiber.dispose() })
+    const inputs = [
+      request(),
+      request({ messages: [message('first'), message('second')] }),
+    ]
+    for (const input of inputs) {
+      const stream = dispatch(ctx, input, () => (async function*() {
+        yield { type: 'finish', reason: { kind: 'stop' } } as const
+      })())
+      for await (const _chunk of stream) {
+        // Exhaust each call so its summary status is final.
+      }
+    }
+
+    const summary = ctx.cacheScope.snapshot().summary
+    assert.equal(summary.comparablePrefixAttempts, 1)
+    assert.equal(summary.prefixFriendlyAttempts, 1)
+    assert.equal(summary.prefixFriendlyRatio, 1)
   })
 
   it('rethrows synchronous next and iteration failures without replacing their identity', async (t) => {
