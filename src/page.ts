@@ -48,7 +48,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     .panel-head > div:first-child { min-width:0; }
     .panel-title { font-weight:700; }
     .panel-sub { margin-top:2px; overflow:hidden; color:var(--muted); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
-    .filter-bar { display:grid; grid-template-columns:minmax(180px,1fr) repeat(3,auto); gap:8px; padding:9px 10px; border-bottom:1px solid var(--line); background:#fbfcfd; }
+    .filter-bar { display:grid; grid-template-columns:minmax(180px,1fr) repeat(4,auto); gap:8px; padding:9px 10px; border-bottom:1px solid var(--line); background:#fbfcfd; }
     select, input[type="search"] { min-width:0; border:1px solid #cfd9df; background:#fff; color:#25343e; border-radius:6px; padding:7px 9px; font:inherit; font-size:12px; }
     select { padding-right:28px; }
     button { border:1px solid #cbd7dd; border-radius:6px; background:#fff; color:#314550; padding:6px 9px; font:inherit; font-size:11px; cursor:pointer; white-space:nowrap; }
@@ -173,7 +173,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     <section class="workspace">
       <div class="panel attempts-panel">
         <div class="panel-head"><div><div class="panel-title">模型调用 Attempt</div><div class="panel-sub" id="countText">0 条记录</div></div><button type="button" class="button-quiet" id="copyDiagnostics">复制当前诊断</button><span class="sr-only" id="copyDiagnosticsStatus" aria-live="polite"></span></div>
-        <div class="filter-bar"><label class="sr-only" for="queryFilter">搜索调用</label><input type="search" id="queryFilter" placeholder="搜索 Call / Session / Provider / Model"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select><label class="sr-only" for="evidenceFilter">按证据组合筛选</label><select id="evidenceFilter"><option value="">全部证据组合</option><option value="friendly-read">前缀友好 · 有读取</option><option value="friendly-zero">前缀友好 · 读取为 0</option><option value="changed-read">前缀变化 · 仍有读取</option><option value="changed-zero">前缀变化 · 读取为 0</option><option value="unresolved">不可交叉判断</option></select></div>
+        <div class="filter-bar"><label class="sr-only" for="queryFilter">搜索调用</label><input type="search" id="queryFilter" placeholder="搜索 Call / Session / Provider / Model"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select><label class="sr-only" for="statusFilter">按调用状态筛选</label><select id="statusFilter"><option value="">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option><option value="cancelled">已取消</option><option value="consumer-stopped">消费端停止</option><option value="incomplete">未完成</option></select><label class="sr-only" for="evidenceFilter">按证据组合筛选</label><select id="evidenceFilter"><option value="">全部证据组合</option><option value="friendly-read">前缀友好 · 有读取</option><option value="friendly-zero">前缀友好 · 读取为 0</option><option value="changed-read">前缀变化 · 仍有读取</option><option value="changed-zero">前缀变化 · 读取为 0</option><option value="unresolved">不可交叉判断</option></select></div>
         <div class="table-wrap"><table aria-label="模型调用记录"><thead><tr><th scope="col">时间</th><th scope="col">Session / Call</th><th scope="col">模型</th><th scope="col">供应商缓存读取</th><th scope="col">未缓存 / Prompt</th><th scope="col">Call TTFT</th><th scope="col">DSH 输入变化</th></tr></thead><tbody id="attemptRows"></tbody></table></div>
       </div>
       <aside class="panel detail"><div class="panel-head"><div><div class="panel-title" id="detailTitle">调用详情</div><div class="panel-sub" id="detailSub">自动显示最新一条记录</div></div><div class="detail-head-actions"><button type="button" class="button-quiet" id="jumpToJson">查看输入</button><button type="button" class="button-quiet" id="focusDetail" aria-pressed="false">专注详情</button></div></div><div class="detail-scroll" id="detailScroll"><div id="detailBody" class="empty">这里会显示 Token 证据、分段指纹和本次完整逻辑输入。</div></div></aside>
@@ -227,11 +227,13 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       if (!state.snapshot) return []
       const session = byId('sessionFilter').value
       const purpose = byId('purposeFilter').value
+      const status = byId('statusFilter').value
       const evidence = byId('evidenceFilter').value
       const query = byId('queryFilter').value.trim().toLocaleLowerCase()
       return state.snapshot.attempts.filter(item => {
         if (session && (item.sessionId || '') !== session) return false
         if (purpose && item.purpose !== purpose) return false
+        if (status && item.status !== status) return false
         if (evidence && evidenceBucket(item) !== evidence) return false
         if (!query) return true
         return [item.id, item.sessionId, item.provider, item.model, item.purpose, item.diagnosis.kind]
@@ -292,10 +294,12 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     function currentFilterLabel() {
       const purpose = byId('purposeFilter').value
       const session = byId('sessionFilter').value
+      const status = byId('statusFilter').value
       const evidence = byId('evidenceFilter').value
       const query = byId('queryFilter').value.trim()
       const parts = [purpose ? (purposeName[purpose] || purpose) : '全部用途']
       if (session) parts.push(shortSession(session))
+      if (status) parts.push(byId('statusFilter').selectedOptions[0].textContent)
       if (evidence) parts.push(byId('evidenceFilter').selectedOptions[0].textContent)
       if (query) parts.push('搜索 “' + query + '”')
       return parts.join(' · ')
@@ -923,6 +927,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     function renderFilteredWorkspace() { renderSummary(); renderWorkspace() }
     byId('sessionFilter').addEventListener('change', renderFilteredWorkspace)
     byId('purposeFilter').addEventListener('change', renderFilteredWorkspace)
+    byId('statusFilter').addEventListener('change', renderFilteredWorkspace)
     byId('evidenceFilter').addEventListener('change', renderFilteredWorkspace)
     byId('queryFilter').addEventListener('input', renderFilteredWorkspace)
     byId('copyDiagnostics').addEventListener('click', () => { void copyFilteredDiagnostics() })

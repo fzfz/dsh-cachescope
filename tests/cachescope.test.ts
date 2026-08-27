@@ -448,6 +448,26 @@ describe('dashboard interactions', () => {
     assert.match(document.querySelector('#countText')?.textContent ?? '', /1 \/ 2 条记录/)
   })
 
+  it('filters attempts by lifecycle status', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    const failed = structuredClone(snapshot.attempts[0]!)
+    failed.id = 'call-failed'
+    failed.status = 'failed'
+    snapshot.attempts.push(failed)
+    const { dom } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+    const document = dom.window.document
+    const status = document.querySelector<HTMLSelectElement>('#statusFilter')
+    assert.ok(status)
+
+    status.value = 'failed'
+    status.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(document.querySelectorAll('tbody tr').length, 1)
+    assert.equal(document.querySelector('tbody tr')?.getAttribute('data-attempt-id'), 'call-failed')
+    assert.match(document.querySelector('#countText')?.textContent ?? '', /1 \/ 2 条记录/)
+  })
+
   it('renders complete input as a lazily disclosed JSON hierarchy', async (t) => {
     const { dom } = await renderTestDashboard()
     t.after(() => { dom.window.close() })
