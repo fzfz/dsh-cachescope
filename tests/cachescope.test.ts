@@ -56,10 +56,10 @@ function request(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   }
 }
 
-async function setup(): Promise<Context> {
+async function setup(overrides: Partial<DiagnosticsConfig> = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(CacheScopePlugin, CONFIG)
+  await ctx.plugin(CacheScopePlugin, { ...CONFIG, ...overrides })
   return ctx
 }
 
@@ -843,6 +843,49 @@ describe('dashboard interactions', () => {
 })
 
 describe('llm/stream observation', () => {
+  it('recognizes the AgentLoop identity shared by a newer DSH package copy', async (t) => {
+    const ctx = await setup()
+    t.after(async () => { await ctx.root.fiber.dispose() })
+    const input = request()
+    const markerKey = Symbol.for('@deepseek-ai/dsh-llm/agent-loop-requests/v1')
+    const markerGlobal = globalThis as unknown as Record<symbol, WeakSet<object> | undefined>
+    const registry = markerGlobal[markerKey] ??= new WeakSet<object>()
+    registry.add(input)
+
+    const stream = dispatch(ctx, input, () => (async function*() {
+      yield { type: 'usage', usage: { inputTokens: 20, outputTokens: 1, cacheReadTokens: 80 } } as const
+      yield { type: 'finish', reason: { kind: 'stop' } } as const
+    })())
+    for await (const _chunk of stream) {
+      // Exhaust the call so its purpose is available in the final snapshot.
+    }
+
+    assert.equal(ctx.cacheScope.snapshot().attempts[0]?.purpose, 'conversation')
+  })
+
+  it('keeps legacy session-bound calls in conversation scope when package copies cannot share identity', async (t) => {
+    const ctx = await setup({ includeAuxiliary: false })
+    t.after(async () => { await ctx.root.fiber.dispose() })
+    const sessionBound = request()
+    const sessionless = request({ messages: [message('standalone direct')] })
+    Reflect.deleteProperty(sessionless, 'sessionId')
+
+    for (const input of [sessionBound, sessionless]) {
+      const stream = dispatch(ctx, input, () => (async function*() {
+        yield { type: 'usage', usage: { inputTokens: 20, outputTokens: 1, cacheReadTokens: 80 } } as const
+        yield { type: 'finish', reason: { kind: 'stop' } } as const
+      })())
+      for await (const _chunk of stream) {
+        // Exhaust each call so the includeAuxiliary filter has run.
+      }
+    }
+
+    assert.deepEqual(
+      ctx.cacheScope.snapshot().attempts.map(attempt => attempt.purpose),
+      ['conversation'],
+    )
+  })
+
   it('constructs next synchronously, starts on iteration, and preserves chunk identity and order', async (t) => {
     const ctx = await setup()
     t.after(async () => { await ctx.root.fiber.dispose() })

@@ -40,6 +40,8 @@ Token 条展示经 DSH adapter 标准化的 Provider 回传证据。只有适配
 
 诊断页严格分开三个范围：主百分比计算选中单次调用的 `Cache Read / Prompt`，其下方小字展示当前进程与筛选条件下的 Token 加权聚合，本地比较则使用同一 Session/同一用途的上一调用。Output Token 不进入任一命中率。加权聚合只对携带 Cache Read 的调用计算 `Σ Cache Read / Σ Prompt`。它不是 DeepSeek 控制台聚合，二者的时间窗口和调用集合可能不同。
 
+插件优先使用 DSH 跨包共享的 AgentLoop 请求身份来识别对话。旧版 DSH 的身份注册表只在单个模块副本内有效时，携带 Session id 且没有辅助用途标记的请求按对话处理；没有 Session id 的未分类请求仍按直接调用处理。
+
 对相邻可比较调用，CacheScope 会展示恒等式 `本次未缓存 = 上次未缓存 + ΔPrompt − ΔCache Read − ΔCache Write`。它解释未缓存 Token 桶为什么变化，不会还原 Provider cache key 或逐 Token 位置。
 
 JSON 颜色是 DSH 侧推断。CacheScope 只将当前逻辑输入与同一 Session、同一用途的上一条进程内调用比较。未变化区域是有利于缓存的前缀候选，但不能证明提供方将其作为 cache key，也不能证明这些具体 token 来自缓存。

@@ -40,6 +40,8 @@ The token bar is provider-derived evidence normalized by the DSH adapter. Cache 
 
 The dashboard keeps three scopes separate: the primary percentage is `Cache Read / Prompt` for the selected call, the smaller line below it is a token-weighted aggregate over the current process and filters, and the local comparison uses the preceding same-Session/same-purpose call. Output tokens enter neither percentage. The weighted aggregate is `sum(Cache Read) / sum(Prompt)` only across calls that reported Cache Read. It is not the DeepSeek console aggregate, whose time window and call population may differ.
 
+Conversation classification uses DSH's shared AgentLoop request identity when available. For older DSH package copies whose identity registry is module-local, an unclassified request carrying a Session id is treated as a conversation; an unclassified sessionless request remains a direct call.
+
 For comparable adjacent calls, CacheScope displays the accounting identity `current uncached = previous uncached + ΔPrompt - ΔCache Read - ΔCache Write`. This explains why the uncached bucket changed; it does not reveal a provider cache key or token positions.
 
 The JSON colors are DSH-side inference. CacheScope compares the current logical input only with the preceding in-process call from the same Session and purpose. An unchanged region is a cache-friendly prefix candidate, not proof that the provider used it as a cache key or served those exact tokens from cache.

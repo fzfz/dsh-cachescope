@@ -21,6 +21,7 @@ export const inject = ['llm']
 const DASHBOARD_PATH = '/cachescope'
 const DATA_PATH = '/cachescope/api'
 const INPUT_PATH = '/cachescope/api/input'
+const AGENT_LOOP_REQUESTS_KEY = Symbol.for('@deepseek-ai/dsh-llm/agent-loop-requests/v1')
 
 /** User-facing plugin configuration. All retained data remains process-local memory. */
 export interface Config {
@@ -78,8 +79,16 @@ function validatePricing(pricing: PricingConfig | undefined): void {
   }
 }
 
+function isConversationRequest(options: GenerateOptions): boolean {
+  const sharedRegistry = (
+    globalThis as unknown as Record<symbol, WeakSet<GenerateOptions> | undefined>
+  )[AGENT_LOOP_REQUESTS_KEY]
+  if (isAgentLoopRequest(options) || sharedRegistry?.has(options) === true) return true
+  return options.purpose === undefined && options.sessionId !== undefined
+}
+
 function purposeOf(options: GenerateOptions): AttemptPurpose {
-  if (isAgentLoopRequest(options)) return 'conversation'
+  if (isConversationRequest(options)) return 'conversation'
   return options.purpose ?? 'direct'
 }
 
@@ -281,7 +290,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('llm/stream', (options, next) => {
     // Preserve the waterfall's synchronous `next()` construction and exception timing.
     const source = next()
-    if (!resolved.includeAuxiliary && !isAgentLoopRequest(options)) return source
+    if (!resolved.includeAuxiliary && !isConversationRequest(options)) return source
     return observedStream(ctx, diagnostics, resolved, options, source)
   })
 
