@@ -1039,9 +1039,9 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       byId('focusDetail').disabled = true
       const root = byId('detailBody'); root.className = 'empty'; root.textContent = '这里会显示 Token 证据、分段指纹和本次完整逻辑输入。'
     }
-    function renderWorkspace() {
+    function renderWorkspace(followNewest) {
       const items = visibleAttempts()
-      let selected = state.selectionPinned
+      let selected = state.selectionPinned || !followNewest
         ? items.find(item => item.id === state.selectedId)
         : newestVisibleAttempt(items)
       if (!selected && items.length) {
@@ -1075,14 +1075,14 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
         state.snapshot = await response.json()
         state.lastUpdatedLabel = new Date(state.snapshot.generatedAt).toLocaleTimeString('zh-CN', { hour12:false })
         showLiveState('已连接 · ' + state.lastUpdatedLabel)
-        renderFilters(); renderWorkspace(); renderSummary()
+        renderFilters(); renderWorkspace(true); renderSummary()
       } catch (error) {
         showLiveState('连接失败 · ' + (error && error.message ? error.message : String(error)))
       } finally {
         state.reloading = false
       }
     }
-    function renderFilteredWorkspace() { renderWorkspace(); renderSummary() }
+    function renderFilteredWorkspace() { renderWorkspace(false); renderSummary() }
     byId('sessionFilter').addEventListener('change', renderFilteredWorkspace)
     byId('providerFilter').addEventListener('change', renderFilteredWorkspace)
     byId('modelFilter').addEventListener('change', renderFilteredWorkspace)

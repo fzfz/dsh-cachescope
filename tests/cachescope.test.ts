@@ -262,6 +262,7 @@ describe('dashboard interactions', () => {
     }
     const second = structuredClone(first)
     second.id = 'call-2'
+    second.sequence = 2
     second.startedAt = 2_000
     second.usage = {
       inputTokens: 156,
@@ -324,6 +325,7 @@ describe('dashboard interactions', () => {
     }
     const second = structuredClone(first)
     second.id = 'call-write-2'
+    second.sequence = 2
     second.startedAt = 2_000
     second.diagnosis.comparedTo = first.id
     second.usage = {
@@ -352,6 +354,7 @@ describe('dashboard interactions', () => {
     Reflect.deleteProperty(first.usage!, 'cacheWriteTokens')
     const second = structuredClone(first)
     second.id = 'call-write-unknown-2'
+    second.sequence = 2
     second.startedAt = 2_000
     second.diagnosis.comparedTo = first.id
     second.usage!.cacheWriteTokens = 5
@@ -497,6 +500,7 @@ describe('dashboard interactions', () => {
     snapshot.attempts.push({
       ...structuredClone(snapshot.attempts[0]!),
       id: 'call-title',
+      sequence: 2,
       purpose: 'session-title',
       usage: {
         inputTokens: 100,
@@ -541,6 +545,7 @@ describe('dashboard interactions', () => {
     for (const variant of variants) {
       const attempt = structuredClone(snapshot.attempts[0]!)
       attempt.id = variant.id
+      attempt.sequence = snapshot.attempts.length + 1
       attempt.diagnosis.kind = variant.kind
       attempt.usage!.cacheReadTokens = variant.cacheReadTokens
       attempt.usage!.cacheReadRatio = variant.cacheReadTokens / attempt.usage!.promptTokens
@@ -561,6 +566,7 @@ describe('dashboard interactions', () => {
     const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
     const changed = structuredClone(snapshot.attempts[0]!)
     changed.id = 'call-needle'
+    changed.sequence = 2
     changed.provider = 'alternate-provider'
     changed.diagnosis.kind = 'system-changed'
     changed.usage!.cacheReadTokens = 0
@@ -594,6 +600,7 @@ describe('dashboard interactions', () => {
     const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
     const failed = structuredClone(snapshot.attempts[0]!)
     failed.id = 'call-failed'
+    failed.sequence = 2
     failed.status = 'failed'
     snapshot.attempts.push(failed)
     const { dom } = await renderTestDashboard(snapshot)
@@ -614,6 +621,7 @@ describe('dashboard interactions', () => {
     const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
     const alternate = structuredClone(snapshot.attempts[0]!)
     alternate.id = 'call-alternate-route'
+    alternate.sequence = 2
     alternate.provider = 'alternate-provider'
     alternate.model = 'alternate-model'
     snapshot.attempts.push(alternate)
@@ -642,11 +650,13 @@ describe('dashboard interactions', () => {
     const baseStartedAt = snapshot.attempts[0]!.startedAt
     const lowCacheSlow = structuredClone(snapshot.attempts[0]!)
     lowCacheSlow.id = 'call-low-cache-slow'
+    lowCacheSlow.sequence = 2
     lowCacheSlow.startedAt = baseStartedAt - 1_000
     lowCacheSlow.firstTokenMs = 300
     lowCacheSlow.usage!.cacheReadRatio = 0.1
     const highCacheFast = structuredClone(snapshot.attempts[0]!)
     highCacheFast.id = 'call-high-cache-fast'
+    highCacheFast.sequence = 3
     highCacheFast.startedAt = baseStartedAt + 1_000
     highCacheFast.firstTokenMs = 10
     highCacheFast.usage!.cacheReadRatio = 0.95
