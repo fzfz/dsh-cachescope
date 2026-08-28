@@ -8,6 +8,7 @@ import LlmRuntime, {
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { JSDOM } from 'jsdom'
 import { analyzeInput, diagnosePrefix, stableJson } from '../src/analysis.ts'
 import * as CacheScopePlugin from '../src/index.ts'
@@ -27,7 +28,7 @@ const CONFIG: DiagnosticsConfig = {
 }
 
 describe('installable bundle', () => {
-  it('captures bounded complete inputs and excludes auxiliary calls', async () => {
+  it('captures bounded complete inputs across all model-call purposes', async () => {
     const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
 
     assert.equal(patch, `- insert:
@@ -35,7 +36,6 @@ describe('installable bundle', () => {
       name: '@kober-basket/dsh-cachescope'
       config:
         captureInput: full
-        includeAuxiliary: false
 `)
   })
 })
@@ -48,6 +48,7 @@ function request(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   return {
     provider: 'test-provider',
     model: 'test-model',
+    sessionId: SessionId('session-test'),
     system: 'stable system',
     tools: [{ name: 'echo', description: 'Echo text', parameters: { type: 'object' } }],
     messages: [message('first')],
@@ -86,6 +87,7 @@ const DASHBOARD_RAW_INPUT = {
 const DASHBOARD_SNAPSHOT = {
   generatedAt: Date.now(),
   captureInput: 'full',
+  includeAuxiliary: true,
   notes: {
     cacheEvidence: 'Cache evidence',
     prefixEvidence: 'Prefix evidence',
@@ -243,6 +245,127 @@ describe('CacheScope input analysis', () => {
 })
 
 describe('dashboard interactions', () => {
+  it('explains provider misses as cache-bucket evolution instead of logical input change', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    const first = snapshot.attempts[0]!
+    first.id = 'call-1'
+    first.startedAt = 1_000
+    first.usage = {
+      inputTokens: 802,
+      outputTokens: 144,
+      cacheReadTokens: 7_680,
+      cacheWriteTokens: 0,
+      promptTokens: 8_482,
+      cacheReadRatio: 7_680 / 8_482,
+      cacheState: 'read-reported',
+    }
+    const second = structuredClone(first)
+    second.id = 'call-2'
+    second.startedAt = 2_000
+    second.usage = {
+      inputTokens: 156,
+      outputTokens: 347,
+      cacheReadTokens: 8_576,
+      cacheWriteTokens: 0,
+      promptTokens: 8_732,
+      cacheReadRatio: 8_576 / 8_732,
+      cacheState: 'read-reported',
+    }
+    second.diagnosis.comparedTo = 'call-1'
+    second.diagnosis.previousMessageCount = 3
+    second.diagnosis.stableMessageCount = 3
+    second.input.messageCount = 7
+    second.input.messagesBytes = 5_248
+    second.input.totalBytes = 37_703
+    snapshot.attempts.push(second)
+
+    const { dom } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const document = dom.window.document
+
+    assert.equal(document.querySelector('#cacheRatio')?.textContent, '94.4%')
+    assert.match(document.querySelector('#cacheRatioNote')?.textContent ?? '', /本进程当前筛选：16,256 \/ 17,214 = 94\.4%/)
+    assert.match(document.querySelector('#captureMode')?.textContent ?? '', /全部模型调用/)
+    const provider = document.querySelector('[data-cache-evidence="normalized-usage"]')
+    assert.match(provider?.textContent ?? '', /本次 Provider usage.*98\.2%/)
+    const evolution = document.querySelector('[data-cache-evidence="cache-evolution"]')
+    assert.ok(evolution)
+    assert.match(evolution.textContent ?? '', /802.*250.*896.*156/)
+    assert.match(evolution.textContent ?? '', /不是输入变化量/)
+    assert.match(document.querySelector('.raw-head h3')?.textContent ?? '', /非 Provider wire payload/)
+  })
+
+  it('includes Cache Write deltas in adjacent-call reconciliation', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    const first = snapshot.attempts[0]!
+    first.id = 'call-write-1'
+    first.startedAt = 1_000
+    first.usage = {
+      inputTokens: 40,
+      outputTokens: 2,
+      cacheReadTokens: 50,
+      cacheWriteTokens: 10,
+      promptTokens: 100,
+      cacheReadRatio: 0.5,
+      cacheState: 'read-reported',
+    }
+    const second = structuredClone(first)
+    second.id = 'call-write-2'
+    second.startedAt = 2_000
+    second.diagnosis.comparedTo = first.id
+    second.usage = {
+      inputTokens: 20,
+      outputTokens: 2,
+      cacheReadTokens: 65,
+      cacheWriteTokens: 15,
+      promptTokens: 100,
+      cacheReadRatio: 0.65,
+      cacheState: 'read-reported',
+    }
+    snapshot.attempts.push(second)
+
+    const { dom } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+    const evolution = dom.window.document.querySelector('[data-cache-evidence="cache-evolution"]')
+    assert.ok(evolution)
+    assert.match(evolution.textContent ?? '', /40（上次未缓存） \+ 0（Prompt 变化） − 15（Cache Read 变化） − 5（Cache Write 变化） = 20/)
+  })
+
+  it('refuses reconciliation when only one call reports Cache Write', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    const first = snapshot.attempts[0]!
+    first.id = 'call-write-unknown-1'
+    first.startedAt = 1_000
+    Reflect.deleteProperty(first.usage!, 'cacheWriteTokens')
+    const second = structuredClone(first)
+    second.id = 'call-write-unknown-2'
+    second.startedAt = 2_000
+    second.diagnosis.comparedTo = first.id
+    second.usage!.cacheWriteTokens = 5
+    second.usage!.promptTokens += 5
+    snapshot.attempts.push(second)
+
+    const { dom } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+    const evolution = dom.window.document.querySelector('[data-cache-evidence="cache-evolution"]')
+    assert.ok(evolution)
+    assert.match(evolution.textContent ?? '', /只有一次调用携带 Cache Write，不能用 0 补齐/)
+    assert.doesNotMatch(evolution.textContent ?? '', /（本次未缓存）$/)
+  })
+
+  it('does not present route or generation-option changes as one cache evolution', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    snapshot.attempts[0]!.diagnosis.kind = 'route-or-options-changed'
+    const { dom } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+
+    const evolution = dom.window.document.querySelector('[data-cache-evidence="cache-evolution"]')
+    assert.ok(evolution)
+    assert.match(evolution.textContent ?? '', /不把这两次调用作为同一缓存路径演进/)
+    assert.doesNotMatch(evolution.textContent ?? '', /=/)
+  })
+
   it('separates normalized usage totals from DSH-inferred input regions', async (t) => {
     const { dom } = await renderTestDashboard()
     t.after(() => { dom.window.close() })
@@ -661,11 +784,20 @@ describe('dashboard interactions', () => {
 
     const payload = JSON.parse(copied) as {
       filter: string
-      summary: { attemptCount: number, firstTokens?: unknown }
+      scope: { kind: string, includeAuxiliary: boolean, filteredAttemptCount: number }
+      summary: { attemptCount: number, firstTokens?: unknown, cacheReadEligiblePromptTokens: number }
       attempts: Array<{ id: string, rawInput?: unknown }>
     }
     assert.equal(payload.filter, '对话')
+    assert.deepEqual(payload.scope, {
+      kind: 'process-local-retained-attempts',
+      captureInput: 'full',
+      includeAuxiliary: true,
+      retainedAttemptCount: 1,
+      filteredAttemptCount: 1,
+    })
     assert.equal(payload.summary.attemptCount, 1)
+    assert.equal(payload.summary.cacheReadEligiblePromptTokens, 100)
     assert.equal(payload.summary.firstTokens, undefined)
     assert.equal(payload.attempts[0]?.id, 'call-1')
     assert.equal(payload.attempts[0]?.rawInput, undefined)
@@ -745,6 +877,29 @@ describe('llm/stream observation', () => {
     assert.equal(summary.prefixFriendlyRatio, 1)
     assert.equal(summary.correlation.comparedAttempts, 1)
     assert.equal(summary.correlation.prefixFriendlyWithRead, 1)
+  })
+
+  it('keeps unrelated sessionless direct calls as independent observations', async (t) => {
+    const ctx = await setup()
+    t.after(async () => { await ctx.root.fiber.dispose() })
+    for (const text of ['first direct', 'unrelated direct']) {
+      const input = request({ messages: [message(text)] })
+      Reflect.deleteProperty(input, 'sessionId')
+      const stream = dispatch(ctx, input, () => (async function*() {
+        yield { type: 'usage', usage: { inputTokens: 20, outputTokens: 1, cacheReadTokens: 80 } } as const
+        yield { type: 'finish', reason: { kind: 'stop' } } as const
+      })())
+      for await (const _chunk of stream) {
+        // Exhaust each independent direct call.
+      }
+    }
+
+    const snapshot = ctx.cacheScope.snapshot()
+    assert.deepEqual(snapshot.attempts.map(attempt => attempt.diagnosis.kind), [
+      'first-observation',
+      'first-observation',
+    ])
+    assert.equal(snapshot.summary.comparablePrefixAttempts, 0)
   })
 
   it('reports median and nearest-rank P95 Call TTFT', async (t) => {

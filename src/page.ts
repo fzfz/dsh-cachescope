@@ -19,12 +19,20 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     .header-button:hover { border-color:rgba(255,255,255,.42); background:rgba(255,255,255,.08); }
     .dot { width:7px; height:7px; border-radius:50%; background:#38d1a8; box-shadow:0 0 0 4px rgba(56,209,168,.12); }
     main { padding:22px 28px 30px; }
-    .notice { display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:start; padding:13px 16px; margin-bottom:16px; border:1px solid #edc995; background:#fff8ec; border-radius:8px; color:#6e4b1e; }
-    .notice strong { color:#8c5513; }
-    .notice p { margin:2px 0 0; color:#806038; }
+    .evidence-layers { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin-bottom:16px; border:1px solid var(--line); border-radius:10px; background:var(--white); box-shadow:var(--shadow); overflow:hidden; }
+    .evidence-layer { min-width:0; display:grid; grid-template-columns:26px minmax(0,1fr); gap:10px; padding:12px 14px; border-right:1px solid var(--line); }
+    .evidence-layer:last-child { border-right:0; }
+    .evidence-layer-number { display:grid; place-items:center; align-self:start; width:24px; height:24px; border-radius:6px; background:var(--blue-soft); color:var(--blue); font:700 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .evidence-layer[data-evidence-layer="evolution"] .evidence-layer-number { background:#eeeafa; color:#6953a3; }
+    .evidence-layer[data-evidence-layer="local"] .evidence-layer-number { background:#edf1f3; color:#526773; }
+    .evidence-layer strong { display:block; font-size:12px; }
+    .evidence-layer p { margin:2px 0 0; color:var(--muted); font-size:10px; }
     .kpis { display:grid; grid-template-columns:repeat(5,1fr); border:1px solid var(--line); border-radius:10px; background:var(--white); box-shadow:var(--shadow); overflow:hidden; margin-bottom:16px; }
     .kpi { padding:17px 20px 15px; border-right:1px solid var(--line); }
     .kpi:last-child { border-right:0; }
+    .kpi[data-evidence-layer="provider"] { box-shadow:inset 0 3px var(--green-strong); }
+    .kpi[data-evidence-layer="local"] { box-shadow:inset 0 3px #7b8e97; background:#fbfcfd; }
+    .kpi-source { margin-bottom:4px; color:#87959e; font:700 9px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.08em; text-transform:uppercase; }
     .kpi-label { color:var(--muted); font-size:12px; margin-bottom:6px; }
     .kpi-value { font-size:27px; line-height:1.1; font-weight:720; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
     .kpi-note { margin-top:6px; color:#8a98a3; font-size:11px; }
@@ -39,7 +47,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     .correlation-cell.good { background:var(--green-soft); }
     .correlation-cell.warn { background:var(--amber-soft); }
     .correlation-cell.bad { background:var(--red-soft); }
-    .workspace { height:max(400px,calc(100vh - 395px)); display:grid; grid-template-columns:minmax(620px,1.15fr) minmax(470px,.85fr); gap:16px; align-items:stretch; }
+    .workspace { height:max(460px,calc(100vh - 420px)); display:grid; grid-template-columns:minmax(620px,1.15fr) minmax(470px,.85fr); gap:16px; align-items:stretch; }
     .workspace.detail-focus { grid-template-columns:minmax(0,1fr); }
     .workspace.detail-focus .attempts-panel { display:none; }
     .panel { min-width:0; background:var(--white); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); overflow:hidden; }
@@ -99,6 +107,13 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     .legend-swatch.miss, .legend-swatch.changed { background:var(--red-strong); }
     .legend-swatch.unknown { background:#8b9aa1; }
     .provider-evidence-note { margin:8px 0 0; color:var(--muted); font-size:10px; }
+    .cache-evolution { grid-column:1 / -1; padding:13px 14px; border:1px solid #ddd8ec; border-radius:8px; background:#faf9fd; }
+    .evolution-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+    .evolution-cell { min-width:0; padding:8px 9px; border:1px solid #e5e1ef; border-radius:7px; background:#fff; }
+    .evolution-cell span { display:block; color:var(--muted); font-size:10px; }
+    .evolution-cell strong { display:block; margin-top:2px; font-size:17px; font-variant-numeric:tabular-nums; }
+    .evolution-equation { margin:9px 0 0; padding:8px 10px; border-radius:6px; background:#f0edf8; color:#493d66; font:600 11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .evolution-note { margin:7px 0 0; color:var(--muted); font-size:10px; }
     .methodology { margin-top:12px; border:1px solid #dce8ec; border-radius:8px; background:#f2f8fa; color:#425963; }
     .methodology summary { cursor:pointer; padding:9px 11px; font-size:12px; font-weight:650; }
     .methodology p { margin:0; padding:0 11px 11px; font-size:12px; }
@@ -151,17 +166,22 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
 </head>
 <body>
   <header>
-    <div><h1>CacheScope</h1><div class="subtitle">DeepSeek Harness · 逐次调用、稳定前缀与 Prefill 代理指标</div></div>
+    <div><h1>CacheScope</h1><div class="subtitle">DeepSeek Harness · Provider 标准 Usage、缓存演进与本地前缀诊断</div></div>
     <div class="header-state"><span class="pill"><span class="dot"></span><span id="liveState" aria-live="polite">等待数据</span></span><span class="pill" id="captureMode">读取配置</span><button type="button" class="header-button" id="refreshNow">立即刷新</button><button type="button" class="header-button" id="togglePolling" aria-pressed="false">暂停刷新</button></div>
   </header>
   <main>
-    <section class="notice"><strong>证据分层</strong><p id="evidenceNote">供应商 usage 决定真实缓存 Token；输入对比只用于解释“哪里发生了变化”。</p></section>
+    <section class="evidence-layers" aria-label="三层缓存诊断口径">
+      <article class="evidence-layer" data-evidence-layer="provider"><span class="evidence-layer-number">01</span><div><strong>Provider 标准 Usage</strong><p>经 DSH adapter 归一化；当前进程筛选，不等于控制台聚合。</p></div></article>
+      <article class="evidence-layer" data-evidence-layer="evolution"><span class="evidence-layer-number">02</span><div><strong>缓存演进</strong><p>相邻调用 Token 桶对账；解释本次未缓存数，不把它当输入变化量。</p></div></article>
+      <article class="evidence-layer" data-evidence-layer="local"><span class="evidence-layer-number">03</span><div><strong>DSH 本地诊断</strong><p>比较逻辑输入的稳定前缀与新增区域；不是 Provider cache key。</p></div></article>
+    </section>
+    <p class="sr-only" id="evidenceNote">供应商 usage 决定真实缓存 Token；输入对比只用于解释逻辑结构变化。</p>
     <section class="kpis">
-      <div class="kpi"><div class="kpi-label">Cache Read Token 加权占比 · 当前筛选</div><div class="kpi-value" id="cacheRatio">—</div><div class="kpi-note" id="cacheRatioNote">当前筛选仅统计 Harness usage 携带 cache_read 的调用</div></div>
-      <div class="kpi"><div class="kpi-label">本地前缀友好率</div><div class="kpi-value" id="prefixRatio">—</div><div class="kpi-note" id="prefixRatioNote">排除首次观察与模型/参数变化</div></div>
-      <div class="kpi"><div class="kpi-label">未缓存输入 Token</div><div class="kpi-value" id="inputTokens">0</div><div class="kpi-note" id="promptTokens">总 Prompt 0</div></div>
-      <div class="kpi"><div class="kpi-label">中位 / P95 Call TTFT</div><div class="kpi-value" id="ttft">—</div><div class="kpi-note">含排队与网络，不等于纯 Prefill</div></div>
-      <div class="kpi"><div class="kpi-label">模型成本（估算）</div><div class="kpi-value" id="cost">—</div><div class="kpi-note" id="costNote">需在插件配置中填写单价</div></div>
+      <div class="kpi" data-evidence-layer="provider"><div class="kpi-source">Provider · filtered aggregate</div><div class="kpi-label">Cache Read / Prompt</div><div class="kpi-value" id="cacheRatio">—</div><div class="kpi-note" id="cacheRatioNote">当前筛选仅统计 Harness usage 携带 cache_read 的调用</div></div>
+      <div class="kpi" data-evidence-layer="provider"><div class="kpi-source">Provider · same evidence set</div><div class="kpi-label" id="inputTokensLabel">未缓存输入 Token</div><div class="kpi-value" id="inputTokens">0</div><div class="kpi-note" id="promptTokens">总 Prompt 0</div></div>
+      <div class="kpi" data-evidence-layer="provider"><div class="kpi-source">Observed · filtered aggregate</div><div class="kpi-label">中位 / P95 Call TTFT</div><div class="kpi-value" id="ttft">—</div><div class="kpi-note">含排队与网络，不等于纯 Prefill</div></div>
+      <div class="kpi" data-evidence-layer="local"><div class="kpi-source">Local heuristic · filtered</div><div class="kpi-label">本地前缀友好率</div><div class="kpi-value" id="prefixRatio">—</div><div class="kpi-note" id="prefixRatioNote">排除首次观察与模型/参数变化</div></div>
+      <div class="kpi" data-evidence-layer="provider"><div class="kpi-source">Local estimate · configured rates</div><div class="kpi-label">模型成本（估算）</div><div class="kpi-value" id="cost">—</div><div class="kpi-note" id="costNote">需在插件配置中填写单价</div></div>
     </section>
     <section class="correlation" aria-label="Provider Cache Read 与本地前缀的交叉统计">
       <div class="correlation-copy"><strong>证据交叉 · 当前筛选</strong><span id="correlationNote">只统计同时具备本地可比基线与 Cache Read 字段的调用</span></div>
@@ -176,7 +196,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       <div class="panel attempts-panel">
         <div class="panel-head"><div><div class="panel-title">模型调用 Attempt</div><div class="panel-sub" id="countText">0 条记录</div></div><button type="button" class="button-quiet" id="copyDiagnostics">复制当前诊断</button><span class="sr-only" id="copyDiagnosticsStatus" aria-live="polite"></span></div>
         <div class="filter-bar"><label class="sr-only" for="queryFilter">搜索调用</label><input type="search" id="queryFilter" placeholder="搜索 Call / Session / Provider / Model"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="providerFilter">按 Provider 筛选</label><select id="providerFilter"><option value="">全部 Provider</option></select><label class="sr-only" for="modelFilter">按模型筛选</label><select id="modelFilter"><option value="">全部模型</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select><label class="sr-only" for="statusFilter">按调用状态筛选</label><select id="statusFilter"><option value="">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option><option value="cancelled">已取消</option><option value="consumer-stopped">消费端停止</option><option value="incomplete">未完成</option></select><label class="sr-only" for="evidenceFilter">按证据组合筛选</label><select id="evidenceFilter"><option value="">全部证据组合</option><option value="friendly-read">前缀友好 · 有读取</option><option value="friendly-zero">前缀友好 · 读取为 0</option><option value="changed-read">前缀变化 · 仍有读取</option><option value="changed-zero">前缀变化 · 读取为 0</option><option value="unresolved">不可交叉判断</option></select><label class="sr-only" for="sortOrder">调用排序</label><select id="sortOrder"><option value="newest">最新优先</option><option value="oldest">最早优先</option><option value="cache-desc">Cache 命中率高优先</option><option value="ttft-desc">TTFT 慢优先</option></select></div>
-        <div class="table-wrap"><table aria-label="模型调用记录"><thead><tr><th scope="col">时间</th><th scope="col">Session / Call</th><th scope="col">模型</th><th scope="col">供应商缓存读取</th><th scope="col">未缓存 / Prompt</th><th scope="col">Call TTFT</th><th scope="col">DSH 输入变化</th></tr></thead><tbody id="attemptRows"></tbody></table></div>
+        <div class="table-wrap"><table aria-label="模型调用记录"><thead><tr><th scope="col">时间</th><th scope="col">Session / Call</th><th scope="col">模型</th><th scope="col">命中率</th><th scope="col">未缓存 / Prompt</th><th scope="col">TTFT</th><th scope="col">输入变化</th></tr></thead><tbody id="attemptRows"></tbody></table></div>
       </div>
       <aside class="panel detail"><div class="panel-head"><div><div class="panel-title" id="detailTitle">调用详情</div><div class="panel-sub" id="detailSub">自动显示最新一条记录</div></div><div class="detail-head-actions"><button type="button" class="button-quiet" id="jumpToJson">查看输入</button><button type="button" class="button-quiet" id="focusDetail" aria-pressed="false">专注详情</button></div></div><div class="detail-scroll" id="detailScroll"><div id="detailBody" class="empty">这里会显示 Token 证据、分段指纹和本次完整逻辑输入。</div></div></aside>
     </section>
@@ -189,6 +209,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     const state = { snapshot:null, selectedId:null, renderedDetailId:null, detailSignature:null, openJsonPaths:new Set(['$']), rawInput:null, rawLoadedKey:null, rawLoadingKey:null, rawErrorKey:null, rawLoadError:null, reloading:false, paused:false, lastUpdatedLabel:null }
     const byId = id => document.getElementById(id)
     const number = value => new Intl.NumberFormat('zh-CN').format(value || 0)
+    const signedNumber = value => (value > 0 ? '+' : '') + number(value)
     const percent = value => value === undefined ? '—' : (value * 100).toFixed(1) + '%'
     const ms = value => value === undefined ? '—' : (value >= 1000 ? (value / 1000).toFixed(2) + ' s' : value.toFixed(1) + ' ms')
     const purposeName = { conversation:'对话', compaction:'压缩', 'session-title':'标题', direct:'直接调用' }
@@ -255,7 +276,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       return attempts.sort((a, b) => b.startedAt - a.startedAt)
     }
     function summarizeAttempts(items) {
-      const summary = { attemptCount:items.length, comparablePrefixAttempts:0, prefixFriendlyAttempts:0, reportedCacheAttempts:0, promptTokens:0, inputTokens:0, cacheReadTokens:0, outputTokens:0, firstTokens:[], estimatedCost:0, pricedAttempts:0, currency:null, reportedPromptTokens:0, correlation:{ comparedAttempts:0, prefixFriendlyWithRead:0, prefixFriendlyWithoutRead:0, prefixChangedWithRead:0, prefixChangedWithoutRead:0 } }
+      const summary = { attemptCount:items.length, comparablePrefixAttempts:0, prefixFriendlyAttempts:0, reportedCacheAttempts:0, promptTokens:0, inputTokens:0, cacheReadTokens:0, outputTokens:0, firstTokens:[], estimatedCost:0, pricedAttempts:0, currency:null, cacheReadEligibleInputTokens:0, cacheReadEligiblePromptTokens:0, correlation:{ comparedAttempts:0, prefixFriendlyWithRead:0, prefixFriendlyWithoutRead:0, prefixChangedWithRead:0, prefixChangedWithoutRead:0 } }
       items.forEach(item => {
         const comparablePrefix = item.diagnosis.kind !== 'first-observation' && item.diagnosis.kind !== 'route-or-options-changed'
         const prefixFriendly = item.diagnosis.kind === 'identical-input' || item.diagnosis.kind === 'append-only'
@@ -279,7 +300,8 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
           summary.outputTokens += item.usage.outputTokens
           if (item.usage.cacheReadTokens !== undefined) {
             summary.reportedCacheAttempts++
-            summary.reportedPromptTokens += item.usage.promptTokens
+            summary.cacheReadEligibleInputTokens += item.usage.inputTokens
+            summary.cacheReadEligiblePromptTokens += item.usage.promptTokens
           }
         }
         if (item.cost) {
@@ -298,7 +320,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       summary.p95FirstTokenMs = summary.firstTokens.length === 0
         ? undefined
         : summary.firstTokens[Math.max(0, Math.ceil(summary.firstTokens.length * 0.95) - 1)]
-      summary.cacheReadRatio = summary.reportedPromptTokens === 0 ? undefined : summary.cacheReadTokens / summary.reportedPromptTokens
+      summary.cacheReadRatio = summary.cacheReadEligiblePromptTokens === 0 ? undefined : summary.cacheReadTokens / summary.cacheReadEligiblePromptTokens
       summary.prefixFriendlyRatio = summary.comparablePrefixAttempts === 0 ? undefined : summary.prefixFriendlyAttempts / summary.comparablePrefixAttempts
       return summary
     }
@@ -330,12 +352,18 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       const attempts = visibleAttempts()
       const summary = { ...summarizeAttempts(attempts) }
       delete summary.firstTokens
-      delete summary.reportedPromptTokens
       delete summary.pricedAttempts
       delete summary.currency
       const payload = {
         generatedAt: state.snapshot.generatedAt,
         filter: currentFilterLabel(),
+        scope: {
+          kind: 'process-local-retained-attempts',
+          captureInput: state.snapshot.captureInput,
+          includeAuxiliary: state.snapshot.includeAuxiliary,
+          retainedAttemptCount: state.snapshot.attempts.length,
+          filteredAttemptCount: attempts.length,
+        },
         summary,
         attempts,
         notes: state.snapshot.notes,
@@ -350,7 +378,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     function renderSummary() {
       const s = summarizeAttempts(visibleAttempts())
       byId('cacheRatio').textContent = percent(s.cacheReadRatio)
-      byId('cacheRatioNote').textContent = '当前筛选：' + currentFilterLabel() + ' · ' + s.reportedCacheAttempts + ' / ' + s.attemptCount + ' 次调用携带 cache_read'
+      byId('cacheRatioNote').textContent = '本进程当前筛选：' + number(s.cacheReadTokens) + ' / ' + number(s.cacheReadEligiblePromptTokens) + ' = ' + percent(s.cacheReadRatio) + ' · ' + currentFilterLabel() + ' · ' + s.reportedCacheAttempts + ' / ' + s.attemptCount + ' 次有缓存证据'
       byId('prefixRatio').textContent = percent(s.prefixFriendlyRatio)
       byId('prefixRatioNote').textContent = s.prefixFriendlyAttempts + ' / ' + s.comparablePrefixAttempts + ' 次可比较调用保持完整 System、Tools 与历史前缀'
       byId('friendlyWithRead').textContent = number(s.correlation.prefixFriendlyWithRead)
@@ -358,8 +386,8 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       byId('changedWithRead').textContent = number(s.correlation.prefixChangedWithRead)
       byId('changedWithoutRead').textContent = number(s.correlation.prefixChangedWithoutRead)
       byId('correlationNote').textContent = '已交叉 ' + s.correlation.comparedAttempts + ' 次；首次观察、模型/参数变化与未携带 Cache Read 字段的调用不进入矩阵'
-      byId('inputTokens').textContent = number(s.inputTokens)
-      byId('promptTokens').textContent = '总 Prompt ' + number(s.promptTokens) + ' · Cache Read ' + number(s.cacheReadTokens)
+      byId('inputTokens').textContent = number(s.cacheReadEligibleInputTokens)
+      byId('promptTokens').textContent = '同一证据集 Prompt ' + number(s.cacheReadEligiblePromptTokens) + ' · Cache Read ' + number(s.cacheReadTokens) + ' · 不是输入变化量'
       byId('ttft').textContent = ms(s.medianFirstTokenMs) + ' / ' + ms(s.p95FirstTokenMs)
       if (s.pricedAttempts > 0 && s.currency) {
         byId('cost').textContent = s.currency + ' ' + s.estimatedCost.toFixed(5)
@@ -368,7 +396,9 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
         byId('cost').textContent = '—'
         byId('costNote').textContent = '需在插件配置中填写单价'
       }
-      byId('captureMode').textContent = state.snapshot.captureInput === 'full' ? '完整输入 · 内存限量保留' : '仅元数据 · 不保留正文'
+      const capture = state.snapshot.captureInput === 'full' ? '完整 DSH 输入' : '仅元数据'
+      const scope = state.snapshot.includeAuxiliary ? '全部模型调用' : '仅 AgentLoop'
+      byId('captureMode').textContent = capture + ' · ' + scope
       byId('evidenceNote').textContent = state.snapshot.notes.cacheEvidence + ' ' + state.snapshot.notes.prefixEvidence
     }
     function renderFilterOptions(selectId, allLabel, values, label) {
@@ -503,10 +533,10 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     function renderProviderEvidence(parent, item) {
       const block = document.createElement('section'); block.className = 'provider-evidence'; block.dataset.cacheEvidence = 'normalized-usage'
       const heading = document.createElement('div'); heading.className = 'evidence-heading'
-      const title = document.createElement('strong'); title.textContent = '模型 Usage Token（本次调用）'
-      const scope = document.createElement('span'); scope.textContent = 'Cache Read 取自 Provider adapter；其余为标准化 Token 桶'
-      heading.append(title, scope); block.append(heading)
       const usage = item.usage
+      const title = document.createElement('strong'); title.textContent = '本次 Provider usage' + (usage && usage.cacheReadRatio !== undefined ? ' · ' + percent(usage.cacheReadRatio) : '')
+      const scope = document.createElement('span'); scope.textContent = '单次 API 响应经 DSH adapter 标准化；不等于控制台聚合'
+      heading.append(title, scope); block.append(heading)
       if (!usage) {
         const missing = document.createElement('div'); missing.className = 'muted'; missing.textContent = '本次调用没有可用的 Token usage。'
         block.append(missing); parent.append(block); return
@@ -532,7 +562,65 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       )
       if (write > 0) legend.append(tokenLegendItem('write', 'Cache Write ' + number(write) + ' Token'))
       block.append(legend)
-      const note = document.createElement('p'); note.className = 'provider-evidence-note'; note.textContent = '色条只展示 Token 桶占比，不对应输入位置。DeepSeek 的未缓存输入等价于 Prompt Token − Cache Read；供应商不返回逐字段 Token 位置。'
+      const note = document.createElement('p'); note.className = 'provider-evidence-note'; note.textContent = '色条只展示 Token 桶占比，不对应输入位置。未缓存输入 = Prompt − Cache Read − Cache Write；它不是本轮新增或变化 Token。'
+      block.append(note); parent.append(block)
+    }
+    function evolutionCell(parent, key, label, value, note) {
+      const cell = document.createElement('div'); cell.className = 'evolution-cell'; cell.dataset.evolutionValue = key
+      const caption = document.createElement('span'); caption.textContent = label
+      const amount = document.createElement('strong'); amount.textContent = value
+      cell.append(caption, amount)
+      if (note) { const detail = document.createElement('span'); detail.textContent = note; cell.append(detail) }
+      parent.append(cell)
+    }
+    function equationTerm(delta, positiveOperator, negativeOperator) {
+      return delta >= 0 ? positiveOperator + ' ' + number(delta) : negativeOperator + ' ' + number(Math.abs(delta))
+    }
+    function renderCacheEvolution(parent, item) {
+      const block = document.createElement('section'); block.className = 'cache-evolution'; block.dataset.cacheEvidence = 'cache-evolution'
+      const heading = document.createElement('div'); heading.className = 'evidence-heading'
+      const title = document.createElement('strong'); title.textContent = '缓存演进 · 相邻调用 Token 桶对账'
+      const comparedTo = item.diagnosis.comparedTo
+      const scope = document.createElement('span'); scope.textContent = comparedTo ? comparedTo + ' → ' + item.id : '当前调用没有本地比较基线'
+      heading.append(title, scope); block.append(heading)
+      if (item.diagnosis.kind === 'route-or-options-changed') {
+        const unavailable = document.createElement('p'); unavailable.className = 'evolution-note'; unavailable.textContent = 'Provider、模型或生成参数发生变化，不把这两次调用作为同一缓存路径演进。'
+        block.append(unavailable); parent.append(block); return
+      }
+      const previous = comparedTo ? state.snapshot.attempts.find(candidate => candidate.id === comparedTo) : undefined
+      const currentUsage = item.usage
+      const previousUsage = previous && previous.usage
+      if (!previous || !currentUsage || !previousUsage) {
+        const unavailable = document.createElement('p'); unavailable.className = 'evolution-note'; unavailable.textContent = comparedTo ? '比较基线已不在当前内存快照中，无法计算相邻调用演进。' : '首次观察无法计算相邻调用演进。'
+        block.append(unavailable); parent.append(block); return
+      }
+      if (currentUsage.cacheReadTokens === undefined || previousUsage.cacheReadTokens === undefined) {
+        const unavailable = document.createElement('p'); unavailable.className = 'evolution-note'; unavailable.textContent = '至少一次调用未携带 Cache Read，不能用 0 补齐，也不能计算缓存演进。'
+        block.append(unavailable); parent.append(block); return
+      }
+      const previousWriteReported = previousUsage.cacheWriteTokens !== undefined
+      const currentWriteReported = currentUsage.cacheWriteTokens !== undefined
+      if (previousWriteReported !== currentWriteReported) {
+        const unavailable = document.createElement('p'); unavailable.className = 'evolution-note'; unavailable.textContent = '只有一次调用携带 Cache Write，不能用 0 补齐，也不能计算完整缓存演进。'
+        block.append(unavailable); parent.append(block); return
+      }
+      const promptDelta = currentUsage.promptTokens - previousUsage.promptTokens
+      const readDelta = currentUsage.cacheReadTokens - previousUsage.cacheReadTokens
+      const previousWrite = previousUsage.cacheWriteTokens ?? 0
+      const currentWrite = currentUsage.cacheWriteTokens ?? 0
+      const writeDelta = currentWrite - previousWrite
+      const missDelta = currentUsage.inputTokens - previousUsage.inputTokens
+      const grid = document.createElement('div'); grid.className = 'evolution-grid'
+      evolutionCell(grid, 'previous-miss', '上次未缓存', number(previousUsage.inputTokens), comparedTo)
+      evolutionCell(grid, 'prompt-delta', 'Prompt 变化', signedNumber(promptDelta), number(previousUsage.promptTokens) + ' → ' + number(currentUsage.promptTokens))
+      evolutionCell(grid, 'cache-read-delta', 'Cache Read 变化', signedNumber(readDelta), number(previousUsage.cacheReadTokens) + ' → ' + number(currentUsage.cacheReadTokens))
+      evolutionCell(grid, 'current-miss', '本次未缓存', number(currentUsage.inputTokens), '变化 ' + signedNumber(missDelta))
+      block.append(grid)
+      const equation = document.createElement('div'); equation.className = 'evolution-equation'
+      const writeTerm = writeDelta === 0 ? '' : ' ' + equationTerm(writeDelta, '−', '+')
+      equation.textContent = number(previousUsage.inputTokens) + '（上次未缓存） ' + equationTerm(promptDelta, '+', '−') + '（Prompt 变化） ' + equationTerm(readDelta, '−', '+') + '（Cache Read 变化）' + writeTerm + (writeDelta === 0 ? '' : '（Cache Write 变化）') + ' = ' + number(currentUsage.inputTokens) + '（本次未缓存）'
+      block.append(equation)
+      const note = document.createElement('p'); note.className = 'evolution-note'; note.textContent = '这是标准化 Token 桶的算术恒等式，只解释本次未缓存数怎样形成；它不是输入变化量，也不定位哪段内容命中。'
       block.append(note); parent.append(block)
     }
     function inferenceLegendItem(kind, text) {
@@ -617,7 +705,11 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     }
     function detailSignature(item) {
       const usage = item.usage || {}
-      return [item.id, item.status, item.finishKind, item.firstTokenMs, item.durationMs, usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens, item.diagnosis.kind, item.diagnosis.comparedTo, item.diagnosis.stableToolCount, item.diagnosis.stableMessageCount, item.rawState, item.input.overallFingerprint, state.rawLoadedKey, state.rawLoadingKey, state.rawErrorKey, state.rawLoadError].join('|')
+      const previous = item.diagnosis.comparedTo
+        ? state.snapshot.attempts.find(candidate => candidate.id === item.diagnosis.comparedTo)
+        : undefined
+      const previousUsage = previous && previous.usage || {}
+      return [item.id, item.status, item.finishKind, item.firstTokenMs, item.durationMs, usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens, item.diagnosis.kind, item.diagnosis.comparedTo, item.diagnosis.stableToolCount, item.diagnosis.stableMessageCount, previousUsage.inputTokens, previousUsage.promptTokens, previousUsage.cacheReadTokens, previousUsage.cacheWriteTokens, item.rawState, item.input.overallFingerprint, state.rawLoadedKey, state.rawLoadingKey, state.rawErrorKey, state.rawLoadError].join('|')
     }
     function rawKey(item) {
       return item.id + '|' + item.input.overallFingerprint
@@ -794,7 +886,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     function renderRawSection(root, item) {
       const section = document.createElement('section'); section.className = 'raw-section'
       const head = document.createElement('div'); head.className = 'raw-head'
-      const title = document.createElement('h3'); title.textContent = '完整 DSH 逻辑输入 · ' + rawName[item.rawState]
+      const title = document.createElement('h3'); title.textContent = '完整 DSH 逻辑输入（非 Provider wire payload） · ' + rawName[item.rawState]
       head.append(title)
       const key = rawKey(item)
       const hasRaw = state.rawLoadedKey === key && state.rawInput !== null
@@ -864,27 +956,28 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       byId('focusDetail').disabled = false
       const summary = document.createElement('div'); summary.className = 'detail-summary'; root.append(summary)
       renderProviderEvidence(summary, item)
-      let list = factSection(summary, '供应商 Usage 明细')
+      renderCacheEvolution(summary, item)
+      let list = factSection(summary, 'Provider 标准 Token 桶')
       addFact(list, '状态', item.status + (item.finishKind ? ' / ' + item.finishKind : ''))
       addFact(list, '用途', purposeName[item.purpose] || item.purpose)
       addFact(list, 'Cache Read', item.usage && item.usage.cacheReadTokens !== undefined ? number(item.usage.cacheReadTokens) + ' (' + percent(item.usage.cacheReadRatio) + ')' : 'Harness usage 未携带（不等于 0）')
       addFact(list, 'Cache Write', item.usage && item.usage.cacheWriteTokens !== undefined ? number(item.usage.cacheWriteTokens) : 'Harness usage 未携带')
-      addFact(list, '适配器归一化未缓存', item.usage ? number(item.usage.inputTokens) : '—')
+      addFact(list, 'Provider 未缓存输入', item.usage ? number(item.usage.inputTokens) : '—')
       addFact(list, 'Prompt 总量', item.usage ? number(item.usage.promptTokens) : '—')
       addFact(list, '输出 Token', item.usage ? number(item.usage.outputTokens) : '—')
       addFact(list, 'Call TTFT', ms(item.firstTokenMs))
       addFact(list, '总耗时', ms(item.durationMs))
-      list = factSection(summary, '输入结构与前缀')
+      list = factSection(summary, 'DSH 逻辑输入（本地推断）')
       addFact(list, '变化判断', changeName[item.diagnosis.kind] || item.diagnosis.kind)
       addFact(list, '本地比较基线', item.diagnosis.comparedTo || '无')
       const comparablePrefix = item.diagnosis.kind !== 'first-observation' && item.diagnosis.kind !== 'route-or-options-changed'
       addFact(list, '稳定 Tools', comparablePrefix ? number(item.diagnosis.stableToolCount) + ' / ' + number(item.input.toolCount) : '无法比较')
       addFact(list, '稳定消息', comparablePrefix ? number(item.diagnosis.stableMessageCount) + ' / ' + number(item.input.messageCount) : '无法比较')
       addFact(list, '消息 / Tools', item.input.messageCount + ' / ' + item.input.toolCount)
-      addFact(list, 'System 字节', number(item.input.systemBytes))
-      addFact(list, 'Tools 字节', number(item.input.toolsBytes))
-      addFact(list, 'Messages 字节', number(item.input.messagesBytes))
-      addFact(list, '总逻辑输入字节', number(item.input.totalBytes))
+      addFact(list, '本地 System 字节', number(item.input.systemBytes))
+      addFact(list, '本地 Tools 字节', number(item.input.toolsBytes))
+      addFact(list, '本地 Messages 字节', number(item.input.messagesBytes))
+      addFact(list, '本地总逻辑输入字节', number(item.input.totalBytes))
       addFact(list, '整体 HMAC', item.input.overallFingerprint.slice(0, 20) + '…')
       const methodology = document.createElement('details'); methodology.className = 'methodology'
       const methodologyTitle = document.createElement('summary'); methodologyTitle.textContent = '口径说明'

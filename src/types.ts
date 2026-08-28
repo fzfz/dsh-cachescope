@@ -168,6 +168,7 @@ export interface DiagnosticsSummary {
 export interface DiagnosticsSnapshot {
   generatedAt: number
   captureInput: DiagnosticsConfig['captureInput']
+  includeAuxiliary: boolean
   rawRetentionAttempts: number
   summary: DiagnosticsSummary
   attempts: CacheAttemptSummary[]

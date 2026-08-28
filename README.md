@@ -13,7 +13,7 @@ dsh plugin --profile web add @kober-basket/dsh-cachescope
 dsh web
 ```
 
-Open [http://127.0.0.1:3080/cachescope](http://127.0.0.1:3080/cachescope). The installable bundle retains the latest bounded complete logical inputs and excludes auxiliary title, compaction, and direct calls, so its table represents AgentLoop conversations.
+Open [http://127.0.0.1:3080/cachescope](http://127.0.0.1:3080/cachescope). The installable bundle retains the latest bounded complete logical inputs and observes conversation, title, compaction, and direct calls. The dashboard initially filters the table to conversations; clear the purpose filter to inspect every observed model call.
 
 To disable prompt-text retention, add this row to the profile's `cordis.patch.yml` and restart DSH:
 
@@ -22,12 +22,12 @@ To disable prompt-text retention, add this row to the profile's `cordis.patch.ym
   name: '@kober-basket/dsh-cachescope'
   config:
     captureInput: metadata
-    includeAuxiliary: false
 ```
 
 ## What it shows
 
 - Provider-normalized Cache Read, uncached input, Cache Write, output, and weighted cache-read ratio.
+- A reconciliation between adjacent comparable calls that explains the current uncached bucket as `previous uncached + prompt delta - Cache Read delta - Cache Write delta`.
 - Per-attempt Call TTFT, median and P95 Call TTFT, total duration, status, purpose, provider, model, and optional cost estimate.
 - Local prefix classification for unchanged input, append-only growth, system changes, tool changes, and rewritten history.
 - A lazily expanded JSON hierarchy that marks stable candidates, the first local difference, downstream content, and regions without a comparable baseline.
@@ -36,7 +36,11 @@ To disable prompt-text retention, add this row to the profile's `cordis.patch.ym
 
 ## How to read the evidence
 
-The token bar is provider evidence. Cache Read is displayed only when the adapter carries that usage field; an omitted field is not treated as zero. The uncached bucket is the adapter's normalized input token count, and cost appears only when all rates are configured.
+The token bar is provider-derived evidence normalized by the DSH adapter. Cache Read is displayed only when the adapter carries that usage field; an omitted field is not treated as zero. The uncached bucket is the adapter's normalized input token count. It is not the count of newly added or changed input tokens.
+
+The dashboard keeps three scopes separate: a selected call, a token-weighted aggregate over the current process and filters, and the local comparison with the preceding same-Session/same-purpose call. The weighted aggregate is `sum(Cache Read) / sum(Prompt)` only across calls that reported Cache Read. It is not the DeepSeek console aggregate, whose time window and call population may differ.
+
+For comparable adjacent calls, CacheScope displays the accounting identity `current uncached = previous uncached + ΔPrompt - ΔCache Read - ΔCache Write`. This explains why the uncached bucket changed; it does not reveal a provider cache key or token positions.
 
 The JSON colors are DSH-side inference. CacheScope compares the current logical input only with the preceding in-process call from the same Session and purpose. An unchanged region is a cache-friendly prefix candidate, not proof that the provider used it as a cache key or served those exact tokens from cache.
 
@@ -44,7 +48,7 @@ Call TTFT starts when CacheScope begins iterating the model stream and ends at t
 
 ## Configuration
 
-The table lists the plugin schema defaults. The installable bundle overrides `captureInput` to `full` and `includeAuxiliary` to `false`; a profile's own patch remains authoritative.
+The table lists the plugin schema defaults. The installable bundle overrides `captureInput` to `full` and keeps the schema default `includeAuxiliary: true`; a profile's own patch remains authoritative.
 
 | Key | Default | Effect |
 |---|---:|---|

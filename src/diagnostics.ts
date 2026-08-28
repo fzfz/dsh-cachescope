@@ -98,8 +98,13 @@ export class CacheScope extends Service {
       this.config.captureInput === 'full',
       this.config.maxRawInputBytes,
     )
-    const scope = `${String(options.sessionId ?? 'no-session')}\u0000${purpose}`
-    const diagnosis = diagnosePrefix(analysis, this.baselines.get(scope))
+    const scope = options.sessionId === undefined
+      ? undefined
+      : `${String(options.sessionId)}\u0000${purpose}`
+    const diagnosis = diagnosePrefix(
+      analysis,
+      scope === undefined ? undefined : this.baselines.get(scope),
+    )
     const record: CacheAttempt = {
       id,
       sequence,
@@ -115,18 +120,20 @@ export class CacheScope extends Service {
       rawState: analysis.rawState,
     }
     this.attempts.push(record)
-    this.scopeByAttempt.set(id, scope)
-    this.baselines.set(scope, {
-      id,
-      analysis: {
-        metadata: analysis.metadata,
-        configHash: analysis.configHash,
-        systemHash: analysis.systemHash,
-        toolHashes: analysis.toolHashes,
-        messageHashes: analysis.messageHashes,
-        rawState: analysis.rawState,
-      },
-    })
+    if (scope !== undefined) {
+      this.scopeByAttempt.set(id, scope)
+      this.baselines.set(scope, {
+        id,
+        analysis: {
+          metadata: analysis.metadata,
+          configHash: analysis.configHash,
+          systemHash: analysis.systemHash,
+          toolHashes: analysis.toolHashes,
+          messageHashes: analysis.messageHashes,
+          rawState: analysis.rawState,
+        },
+      })
+    }
     this.enforceRetention()
     return { record, startedMonotonic: performance.now(), finalized: false }
   }
@@ -179,12 +186,13 @@ export class CacheScope extends Service {
     return {
       generatedAt: Date.now(),
       captureInput: this.config.captureInput,
+      includeAuxiliary: this.config.includeAuxiliary,
       rawRetentionAttempts: this.config.rawRetentionAttempts,
       summary: this.summarize(),
       attempts,
       notes: {
-        cacheEvidence: 'Cache Read Token 来自 Harness 标准化 usage；未缓存输入是适配器标准化后的独立 Token 桶。字段缺失表示该 usage 未携带 Cache Read，不能按 0 处理。',
-        prefixEvidence: '前缀结论只比较本进程内同 Session、同用途的相邻 DSH 逻辑输入，不等同于供应商真实 cache key、逐字段命中位置或命中原因。',
+        cacheEvidence: 'Cache Read Token 来自 Harness 标准化 usage；未缓存输入是 Prompt 减去 Cache Read/Write 后的独立 Token 桶，不是本轮新增或变化 Token。字段缺失表示该 usage 未携带 Cache Read，不能按 0 处理。',
+        prefixEvidence: '前缀结论只比较本进程内同 Session、同用途的相邻 DSH 逻辑输入；采集发生在提供方专用序列化之前，不等同于真实 wire payload、cache key、逐字段命中位置或命中原因。',
         timingEvidence: 'Call TTFT 从开始迭代模型流到首个非空 Token；它包含网络和排队，不是纯 Prefill 耗时。',
       },
     }

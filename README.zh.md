@@ -13,7 +13,7 @@ dsh plugin --profile web add @kober-basket/dsh-cachescope
 dsh web
 ```
 
-打开 [http://127.0.0.1:3080/cachescope](http://127.0.0.1:3080/cachescope)。可安装组合包会保留近期受限的完整逻辑输入，并排除标题、压缩和直接调用，因此表格只表示 AgentLoop 对话。
+打开 [http://127.0.0.1:3080/cachescope](http://127.0.0.1:3080/cachescope)。可安装组合包会保留近期受限的完整逻辑输入，并观察对话、标题、压缩和直接调用。诊断页初始只筛选对话；清空用途筛选即可检查所有已观察的模型调用。
 
 如需禁止保留提示词正文，请将以下配置项加入 profile 的 `cordis.patch.yml`，然后重启 DSH：
 
@@ -22,12 +22,12 @@ dsh web
   name: '@kober-basket/dsh-cachescope'
   config:
     captureInput: metadata
-    includeAuxiliary: false
 ```
 
 ## 展示内容
 
 - 提供方标准化的 Cache Read、未缓存输入、Cache Write、输出以及按 token 加权的缓存读取占比。
+- 对相邻可比较调用进行 Token 桶对账，用“上次未缓存 + Prompt 变化 − Cache Read 变化 − Cache Write 变化”解释本次未缓存量。
 - 每次调用的 Call TTFT、中位与 P95 Call TTFT、总耗时、状态、用途、提供方、模型和可选成本估算。
 - 对未变化输入、仅追加增长、系统提示词变化、工具变化和历史改写的本地前缀分类。
 - 惰性展开的 JSON 层级，标记稳定候选、本地首个差异、下游内容以及没有可比较基线的区域。
@@ -36,7 +36,11 @@ dsh web
 
 ## 如何理解证据
 
-Token 条展示提供方证据。只有适配器携带对应 usage 字段时才展示 Cache Read；字段缺失不按零处理。未缓存区间是适配器标准化后的输入 token 数，只有配置全部单价后才展示成本。
+Token 条展示经 DSH adapter 标准化的 Provider 回传证据。只有适配器携带对应 usage 字段时才展示 Cache Read；字段缺失不按零处理。未缓存区间是适配器标准化后的输入 token 数，不是本轮新增或变化的输入 token 数。
+
+诊断页严格分开三个范围：选中的单次调用、当前进程与筛选条件下的 Token 加权聚合、与同一 Session/同一用途上一调用的本地比较。加权聚合只对携带 Cache Read 的调用计算 `Σ Cache Read / Σ Prompt`。它不是 DeepSeek 控制台聚合，二者的时间窗口和调用集合可能不同。
+
+对相邻可比较调用，CacheScope 会展示恒等式 `本次未缓存 = 上次未缓存 + ΔPrompt − ΔCache Read − ΔCache Write`。它解释未缓存 Token 桶为什么变化，不会还原 Provider cache key 或逐 Token 位置。
 
 JSON 颜色是 DSH 侧推断。CacheScope 只将当前逻辑输入与同一 Session、同一用途的上一条进程内调用比较。未变化区域是有利于缓存的前缀候选，但不能证明提供方将其作为 cache key，也不能证明这些具体 token 来自缓存。
 
@@ -44,7 +48,7 @@ Call TTFT 从 CacheScope 开始迭代模型流时计时，到首个非空 token 
 
 ## 配置
 
-下表列出插件 schema 默认值。可安装组合包会将 `captureInput` 覆盖为 `full`，将 `includeAuxiliary` 覆盖为 `false`；profile 自己的 patch 始终具有最终决定权。
+下表列出插件 schema 默认值。可安装组合包会将 `captureInput` 覆盖为 `full`，并保留 schema 的 `includeAuxiliary: true` 默认值；profile 自己的 patch 始终具有最终决定权。
 
 | 配置键 | 默认值 | 作用 |
 |---|---:|---|
