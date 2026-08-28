@@ -107,6 +107,7 @@ const DASHBOARD_SNAPSHOT = {
   },
   attempts: [{
     id: 'call-1',
+    sequence: 1,
     startedAt: Date.now(),
     sessionId: 'session-test',
     purpose: 'conversation',
@@ -746,6 +747,58 @@ describe('dashboard interactions', () => {
     await poll()
 
     assert.equal(detail.firstElementChild, renderedTitle)
+  })
+
+  it('follows the newest attempt during polling until the user pins a row', async (t) => {
+    const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
+    const { dom, poll } = await renderTestDashboard(snapshot)
+    t.after(() => { dom.window.close() })
+    const document = dom.window.document
+    assert.equal(document.querySelector('tr.selected')?.getAttribute('data-attempt-id'), 'call-1')
+    const sort = document.querySelector<HTMLSelectElement>('#sortOrder')
+    assert.ok(sort)
+    sort.value = 'oldest'
+    sort.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+
+    const second = structuredClone(snapshot.attempts[0]!)
+    second.id = 'call-2'
+    second.sequence = 2
+    second.startedAt -= 1_000
+    second.rawState = 'evicted'
+    second.usage = {
+      inputTokens: 10,
+      outputTokens: 3,
+      cacheReadTokens: 90,
+      cacheWriteTokens: 0,
+      promptTokens: 100,
+      cacheReadRatio: 0.9,
+      cacheState: 'read-reported',
+    }
+    snapshot.attempts.push(second)
+    await poll()
+    await new Promise<void>(resolve => setImmediate(resolve))
+
+    assert.equal(document.querySelector('tr.selected')?.getAttribute('data-attempt-id'), 'call-2')
+    assert.equal(document.querySelector('#cacheRatio')?.textContent, '90.0%')
+
+    document.querySelector<HTMLElement>('tr[data-attempt-id="call-1"]')?.click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const third = structuredClone(second)
+    third.id = 'call-3'
+    third.sequence = 3
+    third.startedAt -= 1_000
+    third.usage = {
+      ...third.usage,
+      inputTokens: 5,
+      cacheReadTokens: 95,
+      cacheReadRatio: 0.95,
+    }
+    snapshot.attempts.push(third)
+    await poll()
+    await new Promise<void>(resolve => setImmediate(resolve))
+
+    assert.equal(document.querySelector('tr.selected')?.getAttribute('data-attempt-id'), 'call-1')
+    assert.equal(document.querySelector('#cacheRatio')?.textContent, '80.0%')
   })
 
   it('loads only the selected complete input and does not refetch it during polling', async (t) => {

@@ -207,7 +207,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     const API = '/cachescope/api'
     const INPUT_API = '/cachescope/api/input'
     const REFRESH_MS = ${refreshMs}
-    const state = { snapshot:null, selectedId:null, renderedDetailId:null, detailSignature:null, openJsonPaths:new Set(['$']), rawInput:null, rawLoadedKey:null, rawLoadingKey:null, rawErrorKey:null, rawLoadError:null, reloading:false, paused:false, lastUpdatedLabel:null }
+    const state = { snapshot:null, selectedId:null, selectionPinned:false, renderedDetailId:null, detailSignature:null, openJsonPaths:new Set(['$']), rawInput:null, rawLoadedKey:null, rawLoadingKey:null, rawErrorKey:null, rawLoadError:null, reloading:false, paused:false, lastUpdatedLabel:null }
     const byId = id => document.getElementById(id)
     const number = value => new Intl.NumberFormat('zh-CN').format(value || 0)
     const signedNumber = value => (value > 0 ? '+' : '') + number(value)
@@ -327,6 +327,13 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     }
     function selectedAttempt(items) {
       return items.find(item => item.id === state.selectedId) || items[0]
+    }
+    function newestVisibleAttempt(items) {
+      const visibleIds = new Set(items.map(item => item.id))
+      return state.snapshot.attempts.reduce((newest, item) => {
+        if (!visibleIds.has(item.id)) return newest
+        return !newest || item.sequence > newest.sequence ? item : newest
+      }, null)
     }
     function currentFilterLabel() {
       const purpose = byId('purposeFilter').value
@@ -464,6 +471,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       byId('detailScroll').scrollTop = 0
     }
     function selectAttempt(item) {
+      state.selectionPinned = true
       if (state.selectedId !== item.id) resetDetailState(item.id)
       renderSummary()
       renderRows()
@@ -1033,12 +1041,18 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     }
     function renderWorkspace() {
       const items = visibleAttempts()
-      let selected = items.find(item => item.id === state.selectedId)
+      let selected = state.selectionPinned
+        ? items.find(item => item.id === state.selectedId)
+        : newestVisibleAttempt(items)
       if (!selected && items.length) {
-        resetDetailState(items[0].id)
-        selected = items[0]
+        state.selectionPinned = false
+        selected = newestVisibleAttempt(items)
+        resetDetailState(selected.id)
+      } else if (selected && selected.id !== state.selectedId) {
+        resetDetailState(selected.id)
       } else if (!selected) {
         state.selectedId = null
+        state.selectionPinned = false
       }
       renderRows()
       if (selected) {
