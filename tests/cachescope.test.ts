@@ -284,8 +284,13 @@ describe('dashboard interactions', () => {
     await new Promise<void>(resolve => setImmediate(resolve))
     const document = dom.window.document
 
-    assert.equal(document.querySelector('#cacheRatio')?.textContent, '94.4%')
-    assert.match(document.querySelector('#cacheRatioNote')?.textContent ?? '', /本进程当前筛选：16,256 \/ 17,214 = 94\.4%/)
+    assert.equal(document.querySelector('#cacheRatio')?.textContent, '98.2%')
+    assert.match(document.querySelector('#cacheRatioNote')?.textContent ?? '', /选中 call-2：Cache Read 8,576 \/ Prompt 8,732 = 98\.2%/)
+    assert.equal(document.querySelector('#inputTokens')?.textContent, '156')
+    assert.match(document.querySelector('#promptTokens')?.textContent ?? '', /本次 Prompt 8,732 · Cache Read 8,576/)
+    assert.match(document.querySelector('#aggregateCacheRatio')?.textContent ?? '', /筛选范围加权：ΣRead 16,256 \/ ΣPrompt 17,214 = 94\.4%/)
+    assert.match(document.querySelector('[data-cache-kpi="selected-attempt"]')?.textContent ?? '', /Output Token 不参与/)
+    assert.doesNotMatch(document.querySelector('[data-cache-kpi="selected-attempt"]')?.textContent ?? '', /347/)
     assert.match(document.querySelector('#captureMode')?.textContent ?? '', /全部模型调用/)
     const provider = document.querySelector('[data-cache-evidence="normalized-usage"]')
     assert.match(provider?.textContent ?? '', /本次 Provider usage.*98\.2%/)
@@ -294,6 +299,12 @@ describe('dashboard interactions', () => {
     assert.match(evolution.textContent ?? '', /802.*250.*896.*156/)
     assert.match(evolution.textContent ?? '', /不是输入变化量/)
     assert.match(document.querySelector('.raw-head h3')?.textContent ?? '', /非 Provider wire payload/)
+
+    document.querySelector<HTMLElement>('tr[data-attempt-id="call-1"]')?.click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(document.querySelector('#cacheRatio')?.textContent, '90.5%')
+    assert.match(document.querySelector('#cacheRatioNote')?.textContent ?? '', /选中 call-1：Cache Read 7,680 \/ Prompt 8,482 = 90\.5%/)
+    assert.match(document.querySelector('#aggregateCacheRatio')?.textContent ?? '', /筛选范围加权：ΣRead 16,256 \/ ΣPrompt 17,214 = 94\.4%/)
   })
 
   it('includes Cache Write deltas in adjacent-call reconciliation', async (t) => {
@@ -471,7 +482,7 @@ describe('dashboard interactions', () => {
     assert.ok(toolsDocument.querySelector('[data-json-path="$.messages"][data-cache-inference="downstream"]'))
   })
 
-  it('recomputes weighted provider KPIs for the active purpose filter', async (t) => {
+  it('keeps the selected-call ratio primary and recomputes the filtered aggregate', async (t) => {
     const snapshot = structuredClone(DASHBOARD_SNAPSHOT)
     snapshot.summary = {
       ...snapshot.summary,
@@ -502,14 +513,21 @@ describe('dashboard interactions', () => {
 
     assert.equal(document.querySelector('#purposeFilter')?.getAttribute('data-default-purpose'), 'conversation')
     assert.equal(document.querySelector('#cacheRatio')?.textContent, '80.0%')
-    assert.match(document.querySelector('#cacheRatioNote')?.textContent ?? '', /当前筛选.*1 \/ 1/)
+    assert.match(document.querySelector('#cacheRatioNote')?.textContent ?? '', /选中 call-1：Cache Read 80 \/ Prompt 100 = 80\.0%/)
+    assert.match(document.querySelector('#aggregateCacheRatio')?.textContent ?? '', /筛选范围加权：ΣRead 80 \/ ΣPrompt 100 = 80\.0%/)
 
     const purpose = document.querySelector<HTMLSelectElement>('#purposeFilter')
     assert.ok(purpose)
     purpose.value = ''
     purpose.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
-    assert.equal(document.querySelector('#cacheRatio')?.textContent, '40.0%')
-    assert.match(document.querySelector('#cacheRatioNote')?.textContent ?? '', /当前筛选.*2 \/ 2/)
+    assert.equal(document.querySelector('#cacheRatio')?.textContent, '80.0%')
+    assert.match(document.querySelector('#aggregateCacheRatio')?.textContent ?? '', /筛选范围加权：ΣRead 80 \/ ΣPrompt 200 = 40\.0%/)
+
+    document.querySelector<HTMLElement>('tr[data-attempt-id="call-title"]')?.click()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(document.querySelector('#cacheRatio')?.textContent, '0.0%')
+    assert.match(document.querySelector('#cacheRatioNote')?.textContent ?? '', /选中 call-title：Cache Read 0 \/ Prompt 100 = 0\.0%/)
+    assert.match(document.querySelector('#aggregateCacheRatio')?.textContent ?? '', /筛选范围加权：ΣRead 80 \/ ΣPrompt 200 = 40\.0%/)
   })
 
   it('cross-tabulates provider Cache Read with comparable local prefix state', async (t) => {

@@ -26,7 +26,7 @@ dsh web
 
 ## 展示内容
 
-- 提供方标准化的 Cache Read、未缓存输入、Cache Write、输出以及按 token 加权的缓存读取占比。
+- 选中调用的 Provider 标准化 Cache Read、未缓存输入、Cache Write、输出及 `Cache Read / Prompt`；当前筛选的 Token 加权聚合作为次级信息保留。
 - 对相邻可比较调用进行 Token 桶对账，用“上次未缓存 + Prompt 变化 − Cache Read 变化 − Cache Write 变化”解释本次未缓存量。
 - 每次调用的 Call TTFT、中位与 P95 Call TTFT、总耗时、状态、用途、提供方、模型和可选成本估算。
 - 对未变化输入、仅追加增长、系统提示词变化、工具变化和历史改写的本地前缀分类。
@@ -38,7 +38,7 @@ dsh web
 
 Token 条展示经 DSH adapter 标准化的 Provider 回传证据。只有适配器携带对应 usage 字段时才展示 Cache Read；字段缺失不按零处理。未缓存区间是适配器标准化后的输入 token 数，不是本轮新增或变化的输入 token 数。
 
-诊断页严格分开三个范围：选中的单次调用、当前进程与筛选条件下的 Token 加权聚合、与同一 Session/同一用途上一调用的本地比较。加权聚合只对携带 Cache Read 的调用计算 `Σ Cache Read / Σ Prompt`。它不是 DeepSeek 控制台聚合，二者的时间窗口和调用集合可能不同。
+诊断页严格分开三个范围：主百分比计算选中单次调用的 `Cache Read / Prompt`，其下方小字展示当前进程与筛选条件下的 Token 加权聚合，本地比较则使用同一 Session/同一用途的上一调用。Output Token 不进入任一命中率。加权聚合只对携带 Cache Read 的调用计算 `Σ Cache Read / Σ Prompt`。它不是 DeepSeek 控制台聚合，二者的时间窗口和调用集合可能不同。
 
 对相邻可比较调用，CacheScope 会展示恒等式 `本次未缓存 = 上次未缓存 + ΔPrompt − ΔCache Read − ΔCache Write`。它解释未缓存 Token 桶为什么变化，不会还原 Provider cache key 或逐 Token 位置。
 

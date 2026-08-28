@@ -36,6 +36,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     .kpi-label { color:var(--muted); font-size:12px; margin-bottom:6px; }
     .kpi-value { font-size:27px; line-height:1.1; font-weight:720; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
     .kpi-note { margin-top:6px; color:#8a98a3; font-size:11px; }
+    .kpi-secondary { margin-top:8px; padding-top:7px; border-top:1px solid #e4ebee; color:#536873; font-size:10px; line-height:1.45; }
     .correlation { display:flex; align-items:stretch; gap:14px; margin-bottom:16px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--white); box-shadow:var(--shadow); }
     .correlation-copy { width:230px; flex:none; display:flex; flex-direction:column; justify-content:center; }
     .correlation-copy strong { font-size:12px; }
@@ -177,8 +178,8 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     </section>
     <p class="sr-only" id="evidenceNote">供应商 usage 决定真实缓存 Token；输入对比只用于解释逻辑结构变化。</p>
     <section class="kpis">
-      <div class="kpi" data-evidence-layer="provider"><div class="kpi-source">Provider · filtered aggregate</div><div class="kpi-label">Cache Read / Prompt</div><div class="kpi-value" id="cacheRatio">—</div><div class="kpi-note" id="cacheRatioNote">当前筛选仅统计 Harness usage 携带 cache_read 的调用</div></div>
-      <div class="kpi" data-evidence-layer="provider"><div class="kpi-source">Provider · same evidence set</div><div class="kpi-label" id="inputTokensLabel">未缓存输入 Token</div><div class="kpi-value" id="inputTokens">0</div><div class="kpi-note" id="promptTokens">总 Prompt 0</div></div>
+      <div class="kpi" data-evidence-layer="provider" data-cache-kpi="selected-attempt"><div class="kpi-source">Provider Usage · 选中调用</div><div class="kpi-label">本次 Prompt 缓存读取占比</div><div class="kpi-value" id="cacheRatio">—</div><div class="kpi-note" id="cacheRatioNote">请选择一条携带 Usage 的调用</div><div class="kpi-secondary" id="aggregateCacheRatio">筛选范围加权：— · Output Token 不参与</div></div>
+      <div class="kpi" data-evidence-layer="provider"><div class="kpi-source">Provider Usage · 选中调用</div><div class="kpi-label" id="inputTokensLabel">本次 Prompt 未缓存 Token</div><div class="kpi-value" id="inputTokens">—</div><div class="kpi-note" id="promptTokens">请选择一条携带 Usage 的调用</div></div>
       <div class="kpi" data-evidence-layer="provider"><div class="kpi-source">Observed · filtered aggregate</div><div class="kpi-label">中位 / P95 Call TTFT</div><div class="kpi-value" id="ttft">—</div><div class="kpi-note">含排队与网络，不等于纯 Prefill</div></div>
       <div class="kpi" data-evidence-layer="local"><div class="kpi-source">Local heuristic · filtered</div><div class="kpi-label">本地前缀友好率</div><div class="kpi-value" id="prefixRatio">—</div><div class="kpi-note" id="prefixRatioNote">排除首次观察与模型/参数变化</div></div>
       <div class="kpi" data-evidence-layer="provider"><div class="kpi-source">Local estimate · configured rates</div><div class="kpi-label">模型成本（估算）</div><div class="kpi-value" id="cost">—</div><div class="kpi-note" id="costNote">需在插件配置中填写单价</div></div>
@@ -195,8 +196,8 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     <section class="workspace">
       <div class="panel attempts-panel">
         <div class="panel-head"><div><div class="panel-title">模型调用 Attempt</div><div class="panel-sub" id="countText">0 条记录</div></div><button type="button" class="button-quiet" id="copyDiagnostics">复制当前诊断</button><span class="sr-only" id="copyDiagnosticsStatus" aria-live="polite"></span></div>
-        <div class="filter-bar"><label class="sr-only" for="queryFilter">搜索调用</label><input type="search" id="queryFilter" placeholder="搜索 Call / Session / Provider / Model"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="providerFilter">按 Provider 筛选</label><select id="providerFilter"><option value="">全部 Provider</option></select><label class="sr-only" for="modelFilter">按模型筛选</label><select id="modelFilter"><option value="">全部模型</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select><label class="sr-only" for="statusFilter">按调用状态筛选</label><select id="statusFilter"><option value="">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option><option value="cancelled">已取消</option><option value="consumer-stopped">消费端停止</option><option value="incomplete">未完成</option></select><label class="sr-only" for="evidenceFilter">按证据组合筛选</label><select id="evidenceFilter"><option value="">全部证据组合</option><option value="friendly-read">前缀友好 · 有读取</option><option value="friendly-zero">前缀友好 · 读取为 0</option><option value="changed-read">前缀变化 · 仍有读取</option><option value="changed-zero">前缀变化 · 读取为 0</option><option value="unresolved">不可交叉判断</option></select><label class="sr-only" for="sortOrder">调用排序</label><select id="sortOrder"><option value="newest">最新优先</option><option value="oldest">最早优先</option><option value="cache-desc">Cache 命中率高优先</option><option value="ttft-desc">TTFT 慢优先</option></select></div>
-        <div class="table-wrap"><table aria-label="模型调用记录"><thead><tr><th scope="col">时间</th><th scope="col">Session / Call</th><th scope="col">模型</th><th scope="col">命中率</th><th scope="col">未缓存 / Prompt</th><th scope="col">TTFT</th><th scope="col">输入变化</th></tr></thead><tbody id="attemptRows"></tbody></table></div>
+        <div class="filter-bar"><label class="sr-only" for="queryFilter">搜索调用</label><input type="search" id="queryFilter" placeholder="搜索 Call / Session / Provider / Model"><label class="sr-only" for="sessionFilter">按 Session 筛选</label><select id="sessionFilter"><option value="">全部 Session</option></select><label class="sr-only" for="providerFilter">按 Provider 筛选</label><select id="providerFilter"><option value="">全部 Provider</option></select><label class="sr-only" for="modelFilter">按模型筛选</label><select id="modelFilter"><option value="">全部模型</option></select><label class="sr-only" for="purposeFilter">按用途筛选</label><select id="purposeFilter" data-default-purpose="conversation"><option value="">全部用途</option><option value="conversation" selected>对话</option><option value="compaction">压缩</option><option value="session-title">标题</option><option value="direct">直接调用</option></select><label class="sr-only" for="statusFilter">按调用状态筛选</label><select id="statusFilter"><option value="">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option><option value="cancelled">已取消</option><option value="consumer-stopped">消费端停止</option><option value="incomplete">未完成</option></select><label class="sr-only" for="evidenceFilter">按证据组合筛选</label><select id="evidenceFilter"><option value="">全部证据组合</option><option value="friendly-read">前缀友好 · 有读取</option><option value="friendly-zero">前缀友好 · 读取为 0</option><option value="changed-read">前缀变化 · 仍有读取</option><option value="changed-zero">前缀变化 · 读取为 0</option><option value="unresolved">不可交叉判断</option></select><label class="sr-only" for="sortOrder">调用排序</label><select id="sortOrder"><option value="newest">最新优先</option><option value="oldest">最早优先</option><option value="cache-desc">Read / Prompt 高优先</option><option value="ttft-desc">TTFT 慢优先</option></select></div>
+        <div class="table-wrap"><table aria-label="模型调用记录"><thead><tr><th scope="col">时间</th><th scope="col">Session / Call</th><th scope="col">模型</th><th scope="col">本次 Read / Prompt</th><th scope="col">未缓存 / Prompt</th><th scope="col">TTFT</th><th scope="col">输入变化</th></tr></thead><tbody id="attemptRows"></tbody></table></div>
       </div>
       <aside class="panel detail"><div class="panel-head"><div><div class="panel-title" id="detailTitle">调用详情</div><div class="panel-sub" id="detailSub">自动显示最新一条记录</div></div><div class="detail-head-actions"><button type="button" class="button-quiet" id="jumpToJson">查看输入</button><button type="button" class="button-quiet" id="focusDetail" aria-pressed="false">专注详情</button></div></div><div class="detail-scroll" id="detailScroll"><div id="detailBody" class="empty">这里会显示 Token 证据、分段指纹和本次完整逻辑输入。</div></div></aside>
     </section>
@@ -324,6 +325,9 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       summary.prefixFriendlyRatio = summary.comparablePrefixAttempts === 0 ? undefined : summary.prefixFriendlyAttempts / summary.comparablePrefixAttempts
       return summary
     }
+    function selectedAttempt(items) {
+      return items.find(item => item.id === state.selectedId) || items[0]
+    }
     function currentFilterLabel() {
       const purpose = byId('purposeFilter').value
       const session = byId('sessionFilter').value
@@ -376,9 +380,35 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       }
     }
     function renderSummary() {
-      const s = summarizeAttempts(visibleAttempts())
-      byId('cacheRatio').textContent = percent(s.cacheReadRatio)
-      byId('cacheRatioNote').textContent = '本进程当前筛选：' + number(s.cacheReadTokens) + ' / ' + number(s.cacheReadEligiblePromptTokens) + ' = ' + percent(s.cacheReadRatio) + ' · ' + currentFilterLabel() + ' · ' + s.reportedCacheAttempts + ' / ' + s.attemptCount + ' 次有缓存证据'
+      const attempts = visibleAttempts()
+      const s = summarizeAttempts(attempts)
+      const selected = selectedAttempt(attempts)
+      const usage = selected && selected.usage
+      if (!selected) {
+        byId('cacheRatio').textContent = '—'
+        byId('cacheRatioNote').textContent = '当前筛选下没有调用'
+        byId('inputTokens').textContent = '—'
+        byId('promptTokens').textContent = '当前筛选下没有调用'
+      } else if (!usage) {
+        byId('cacheRatio').textContent = '—'
+        byId('cacheRatioNote').textContent = '选中 ' + selected.id + '：尚无 Provider Usage'
+        byId('inputTokens').textContent = '—'
+        byId('promptTokens').textContent = '本次尚无 Prompt Token 计量'
+      } else {
+        byId('inputTokens').textContent = number(usage.inputTokens)
+        if (usage.cacheReadTokens === undefined) {
+          byId('cacheRatio').textContent = '—'
+          byId('cacheRatioNote').textContent = '选中 ' + selected.id + '：Usage 未携带 Cache Read（不等于 0）'
+          byId('promptTokens').textContent = '本次 Prompt ' + number(usage.promptTokens) + ' · Cache Read 未携带'
+        } else {
+          byId('cacheRatio').textContent = percent(usage.cacheReadRatio)
+          byId('cacheRatioNote').textContent = '选中 ' + selected.id + '：Cache Read ' + number(usage.cacheReadTokens) + ' / Prompt ' + number(usage.promptTokens) + ' = ' + percent(usage.cacheReadRatio)
+          byId('promptTokens').textContent = '本次 Prompt ' + number(usage.promptTokens) + ' · Cache Read ' + number(usage.cacheReadTokens)
+        }
+      }
+      byId('aggregateCacheRatio').textContent = s.cacheReadRatio === undefined
+        ? '筛选范围加权：无可计算调用 · ' + s.reportedCacheAttempts + ' / ' + s.attemptCount + ' 次有 Cache Read · Output Token 不参与'
+        : '筛选范围加权：ΣRead ' + number(s.cacheReadTokens) + ' / ΣPrompt ' + number(s.cacheReadEligiblePromptTokens) + ' = ' + percent(s.cacheReadRatio) + ' · ' + currentFilterLabel() + ' · ' + s.reportedCacheAttempts + ' / ' + s.attemptCount + ' 次有 Cache Read · Output Token 不参与'
       byId('prefixRatio').textContent = percent(s.prefixFriendlyRatio)
       byId('prefixRatioNote').textContent = s.prefixFriendlyAttempts + ' / ' + s.comparablePrefixAttempts + ' 次可比较调用保持完整 System、Tools 与历史前缀'
       byId('friendlyWithRead').textContent = number(s.correlation.prefixFriendlyWithRead)
@@ -386,8 +416,6 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
       byId('changedWithRead').textContent = number(s.correlation.prefixChangedWithRead)
       byId('changedWithoutRead').textContent = number(s.correlation.prefixChangedWithoutRead)
       byId('correlationNote').textContent = '已交叉 ' + s.correlation.comparedAttempts + ' 次；首次观察、模型/参数变化与未携带 Cache Read 字段的调用不进入矩阵'
-      byId('inputTokens').textContent = number(s.cacheReadEligibleInputTokens)
-      byId('promptTokens').textContent = '同一证据集 Prompt ' + number(s.cacheReadEligiblePromptTokens) + ' · Cache Read ' + number(s.cacheReadTokens) + ' · 不是输入变化量'
       byId('ttft').textContent = ms(s.medianFirstTokenMs) + ' / ' + ms(s.p95FirstTokenMs)
       if (s.pricedAttempts > 0 && s.currency) {
         byId('cost').textContent = s.currency + ' ' + s.estimatedCost.toFixed(5)
@@ -437,6 +465,7 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
     }
     function selectAttempt(item) {
       if (state.selectedId !== item.id) resetDetailState(item.id)
+      renderSummary()
       renderRows()
       void ensureRawInput(item)
       renderDetail(item)
@@ -1032,14 +1061,14 @@ export function renderDashboardPage(nonce: string, refreshMs: number): string {
         state.snapshot = await response.json()
         state.lastUpdatedLabel = new Date(state.snapshot.generatedAt).toLocaleTimeString('zh-CN', { hour12:false })
         showLiveState('已连接 · ' + state.lastUpdatedLabel)
-        renderFilters(); renderSummary(); renderWorkspace()
+        renderFilters(); renderWorkspace(); renderSummary()
       } catch (error) {
         showLiveState('连接失败 · ' + (error && error.message ? error.message : String(error)))
       } finally {
         state.reloading = false
       }
     }
-    function renderFilteredWorkspace() { renderSummary(); renderWorkspace() }
+    function renderFilteredWorkspace() { renderWorkspace(); renderSummary() }
     byId('sessionFilter').addEventListener('change', renderFilteredWorkspace)
     byId('providerFilter').addEventListener('change', renderFilteredWorkspace)
     byId('modelFilter').addEventListener('change', renderFilteredWorkspace)

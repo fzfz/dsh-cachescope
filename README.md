@@ -26,7 +26,7 @@ To disable prompt-text retention, add this row to the profile's `cordis.patch.ym
 
 ## What it shows
 
-- Provider-normalized Cache Read, uncached input, Cache Write, output, and weighted cache-read ratio.
+- Selected-attempt Provider-normalized Cache Read, uncached input, Cache Write, output, and `Cache Read / Prompt`; the current-filter weighted aggregate stays visible as secondary context.
 - A reconciliation between adjacent comparable calls that explains the current uncached bucket as `previous uncached + prompt delta - Cache Read delta - Cache Write delta`.
 - Per-attempt Call TTFT, median and P95 Call TTFT, total duration, status, purpose, provider, model, and optional cost estimate.
 - Local prefix classification for unchanged input, append-only growth, system changes, tool changes, and rewritten history.
@@ -38,7 +38,7 @@ To disable prompt-text retention, add this row to the profile's `cordis.patch.ym
 
 The token bar is provider-derived evidence normalized by the DSH adapter. Cache Read is displayed only when the adapter carries that usage field; an omitted field is not treated as zero. The uncached bucket is the adapter's normalized input token count. It is not the count of newly added or changed input tokens.
 
-The dashboard keeps three scopes separate: a selected call, a token-weighted aggregate over the current process and filters, and the local comparison with the preceding same-Session/same-purpose call. The weighted aggregate is `sum(Cache Read) / sum(Prompt)` only across calls that reported Cache Read. It is not the DeepSeek console aggregate, whose time window and call population may differ.
+The dashboard keeps three scopes separate: the primary percentage is `Cache Read / Prompt` for the selected call, the smaller line below it is a token-weighted aggregate over the current process and filters, and the local comparison uses the preceding same-Session/same-purpose call. Output tokens enter neither percentage. The weighted aggregate is `sum(Cache Read) / sum(Prompt)` only across calls that reported Cache Read. It is not the DeepSeek console aggregate, whose time window and call population may differ.
 
 For comparable adjacent calls, CacheScope displays the accounting identity `current uncached = previous uncached + ΔPrompt - ΔCache Read - ΔCache Write`. This explains why the uncached bucket changed; it does not reveal a provider cache key or token positions.
 
