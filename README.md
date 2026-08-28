@@ -2,20 +2,26 @@
 
 English | [中文](README.zh.md)
 
-CacheScope is a prompt-cache observability plugin for DeepSeek Harness. It records each `llm/stream` attempt, combines normalized provider usage with a local comparison of adjacent DSH logical inputs, and serves a desktop dashboard without changing the model request or registering a model-visible tool.
+**See how much prompt cache a model call used—and what changed when it missed.**
+
+CacheScope puts provider-reported cache-token usage beside the DSH-side difference between adjacent logical inputs. It records observed `llm/stream` attempts and serves a desktop dashboard without modifying model requests or registering a model-visible tool.
+
+![CacheScope dashboard showing provider cache usage, adjacent-input changes, and the hierarchical input inspector](assets/cachescope-dashboard.jpg)
+
+*Dashboard shown with synthetic sample calls. Provider figures are illustrative.*
 
 ## Install
 
-Install the bundle into a Web profile and start that profile:
+Install the bundle into the Web profile and start DSH:
 
 ```sh
 dsh plugin --profile web add @kober-basket/dsh-cachescope
 dsh web
 ```
 
-Open [http://127.0.0.1:3080/cachescope](http://127.0.0.1:3080/cachescope). The installable bundle retains the latest bounded complete logical inputs and observes conversation, title, compaction, and direct calls. The dashboard initially filters the table to conversations; clear the purpose filter to inspect every observed model call.
+Open [http://127.0.0.1:3080/cachescope](http://127.0.0.1:3080/cachescope).
 
-To disable prompt-text retention, add this row to the profile's `cordis.patch.yml` and restart DSH:
+> **Prompt privacy:** the installed bundle enables `captureInput: full`. By default it can retain the latest 12 complete logical inputs in DSH process memory, up to 2,000,000 UTF-8 JSON bytes each. Use the metadata-only configuration below before sending sensitive prompts if complete-input inspection is unnecessary.
 
 ```yaml
 - id: cachescope
@@ -24,61 +30,101 @@ To disable prompt-text retention, add this row to the profile's `cordis.patch.ym
     captureInput: metadata
 ```
 
-## What it shows
+Restart DSH after changing the profile.
 
-- Selected-attempt Provider-normalized Cache Read, uncached input, Cache Write, output, and `Cache Read / Prompt`; the current-filter weighted aggregate stays visible as secondary context.
-- A reconciliation between adjacent comparable calls that explains the current uncached bucket as `previous uncached + prompt delta - Cache Read delta - Cache Write delta`.
-- Per-attempt Call TTFT, median and P95 Call TTFT, total duration, status, purpose, provider, model, and optional cost estimate.
-- Local prefix classification for unchanged input, append-only growth, system changes, tool changes, and rewritten history.
-- A lazily expanded JSON hierarchy that marks stable candidates, the first local difference, downstream content, and regions without a comparable baseline.
-- Session, provider, model, purpose, and lifecycle-status filters that recompute the visible summary while retaining retries as separate attempts, with diagnostic sorting by time, cache-read ratio, or Call TTFT.
-- Live polling follows the newest visible attempt until a row is selected manually; manual selection stays pinned while new calls arrive.
-- Copyable filtered diagnostic metadata for issues and discussions without complete prompt content.
+## Quick start: compare two turns
+
+1. Send a first message in a DSH conversation. This creates the local comparison baseline.
+2. Send a second message in the same Session without changing the provider, model, System Prompt, or enabled tools.
+3. Select the second conversation call in CacheScope. Read its Provider Cache Read ratio at the top, then inspect the adjacent-input diagnosis and colored input tree.
+
+The first observed call has no local comparison baseline. Cache Read also remains unreported when the provider adapter does not carry that usage field; a missing field is not treated as zero.
+
+The table initially filters to conversations. Clear the purpose filter to include title generation, compaction, and direct model calls.
+
+## What you can diagnose
+
+- How much of one call's Prompt was reported as Cache Read, alongside uncached input, Cache Write, output, and a token-weighted aggregate over currently retained calls matching the active filters.
+- Why the reported uncached bucket changed between adjacent comparable calls: `current uncached = previous uncached + ΔPrompt - ΔCache Read - ΔCache Write`.
+- Whether the DSH logical input stayed identical, grew only at the end, changed System or Tools, changed routing or options, or rewrote message history.
+- Which input regions are stable-prefix candidates, the first local difference, downstream regions, or regions without a comparable baseline.
+- Call TTFT, median and P95 Call TTFT, total duration, status, purpose, provider, model, retries, and optional local cost estimates.
+- Session, provider, model, purpose, lifecycle, and evidence filters; diagnostic sorting; live following; and copyable metadata for issues or discussions.
 
 ## How to read the evidence
 
-The token bar is provider-derived evidence normalized by the DSH adapter. Cache Read is displayed only when the adapter carries that usage field; an omitted field is not treated as zero. The uncached bucket is the adapter's normalized input token count. It is not the count of newly added or changed input tokens.
+| Evidence | Source and meaning | Does not mean |
+|---|---|---|
+| Selected `Cache Read / Prompt` | Provider usage normalized by the DSH adapter for one call. | A local diff percentage or the DeepSeek console aggregate. |
+| Filtered weighted ratio | `Σ Cache Read / Σ Prompt` across currently retained, visible calls that reported Cache Read. | The provider console's potentially different time window and call population. |
+| Uncached input | The adapter's normalized uncached input-token bucket. | Response length or the number of newly added or changed tokens. |
+| Input-tree colors | Comparison with the preceding in-process call from the same Session and purpose. | Proof that the provider used a region as a cache key or returned those exact tokens from cache. |
+| Token reconciliation | Arithmetic explaining how adjacent reported token buckets changed. | A provider cache key, token offsets, or the cause of a cache decision. |
+| Call TTFT | Time from CacheScope beginning stream iteration to the first non-empty token. | Isolated provider Prefill time; queueing and network time are included. |
 
-The dashboard keeps three scopes separate: the primary percentage is `Cache Read / Prompt` for the selected call, the smaller line below it is a token-weighted aggregate over the current process and filters, and the local comparison uses the preceding same-Session/same-purpose call. Output tokens enter neither percentage. The weighted aggregate is `sum(Cache Read) / sum(Prompt)` only across calls that reported Cache Read. It is not the DeepSeek console aggregate, whose time window and call population may differ.
-
-Conversation classification uses DSH's shared AgentLoop request identity when available. For older DSH package copies whose identity registry is module-local, an unclassified request carrying a Session id is treated as a conversation; an unclassified sessionless request remains a direct call.
-
-For comparable adjacent calls, CacheScope displays the accounting identity `current uncached = previous uncached + ΔPrompt - ΔCache Read - ΔCache Write`. This explains why the uncached bucket changed; it does not reveal a provider cache key or token positions.
-
-The JSON colors are DSH-side inference. CacheScope compares the current logical input only with the preceding in-process call from the same Session and purpose. An unchanged region is a cache-friendly prefix candidate, not proof that the provider used it as a cache key or served those exact tokens from cache.
-
-Call TTFT starts when CacheScope begins iterating the model stream and ends at the first non-empty token. It includes queueing and network time, so it is a Prefill proxy rather than isolated Prefill duration.
+Output tokens enter neither cache ratio. The input hierarchy represents the DSH logical model input captured before provider-specific serialization, so it can differ from the exact wire payload.
 
 ## Configuration
 
-The table lists the plugin schema defaults. The installable bundle overrides `captureInput` to `full` and keeps the schema default `includeAuxiliary: true`; a profile's own patch remains authoritative.
+The Schema default applies when the plugin is mounted directly. The published installable bundle overrides only `captureInput` to `full`; the profile's own patch remains authoritative.
 
-| Key | Default | Effect |
-|---|---:|---|
-| `captureInput` | `metadata` | Retain fingerprints and metrics only, or bounded exact logical inputs with `full`. |
-| `maxAttempts` | `500` | Maximum model-call attempts retained in memory. |
-| `rawRetentionAttempts` | `12` | Maximum recent attempts that may retain complete inputs. |
-| `maxRawInputBytes` | `2000000` | Maximum UTF-8 JSON bytes retained for one complete input. |
-| `refreshMs` | `1500` | Dashboard polling interval in milliseconds. |
-| `logAttempts` | `true` | Print a metadata-only summary after each attempt. |
-| `includeAuxiliary` | `true` | Include compaction, title generation, and direct model calls. |
-| `dashboard` | `true` | Register the dashboard when a loopback WebServer is available. |
-| `pricing` | unset | Optional currency and per-million rates for uncached input, Cache Read, Cache Write, and output. |
+| Key | Schema default | Installed bundle | Effect |
+|---|---:|---:|---|
+| `captureInput` | `metadata` | `full` | Retain fingerprints and metrics only, or bounded complete logical inputs. |
+| `maxAttempts` | `500` | `500` | Maximum attempts retained in process memory. Older attempts are evicted. |
+| `rawRetentionAttempts` | `12` | `12` | Maximum recent attempts that may retain complete inputs. |
+| `maxRawInputBytes` | `2000000` | `2000000` | Maximum UTF-8 JSON bytes retained for one complete input. |
+| `refreshMs` | `1500` | `1500` | Dashboard polling interval in milliseconds. |
+| `logAttempts` | `true` | `true` | Print one metadata-only summary after each attempt. |
+| `includeAuxiliary` | `true` | `true` | Include compaction, title generation, and direct calls. |
+| `dashboard` | `true` | `true` | Register the dashboard when the WebServer is bound to loopback. |
+| `pricing` | unset | unset | Optional currency and per-million-token rates for local cost estimates. |
 
-## Data handling
+### Optional pricing
 
-- Every record is process-local memory and disappears when DSH stops.
+Supply all four rates from your current provider price sheet; CacheScope does not ship or update a pricing table.
+
+```yaml
+- id: cachescope
+  name: '@kober-basket/dsh-cachescope'
+  config:
+    pricing:
+      currency: CNY
+      uncachedInputPerMillion: 0 # replace with your current rate
+      cacheReadPerMillion: 0 # replace with your current rate
+      cacheWritePerMillion: 0 # replace with your current rate
+      outputPerMillion: 0 # replace with your current rate
+```
+
+Replace every zero before relying on cost estimates. CacheScope uses normalized usage fields and the values you supply; the example contains no current or recommended provider rates.
+
+## Data handling and local access
+
+- Attempt records and retained complete inputs live in DSH process memory. Their server-side copies disappear when that DSH process stops.
+- Complete inputs can include System Prompt text, tool schemas, messages, and request options. Set `captureInput: metadata` to disable prompt-text retention.
 - Metadata fingerprints use a random per-process HMAC key and cannot be compared across restarts.
-- The installable bundle retains complete System Prompt, tool schemas, and messages within both count and byte limits; set `captureInput: metadata` to disable prompt-text retention.
-- Polling responses contain metadata only; the browser fetches the selected complete input through a separate endpoint and reuses it while the fingerprint is unchanged.
-- Dashboard registration requires a WebServer bound to `127.0.0.1`; each request must also be loopback and same-origin.
+- Polling responses contain metadata only. The selected complete input is fetched separately with `Cache-Control: no-store` and held in the open page's JavaScript memory while displayed.
+- **Copy JSON** additionally writes the selected complete input to the operating-system clipboard, where it can outlive both the page and DSH until replaced or cleared.
+- `logAttempts` emits metadata-only summaries. Whether those lines persist depends on the host's logging configuration.
+- The dashboard registers only when the DSH WebServer is bound to `127.0.0.1`. Requests must come from loopback, use the expected `127.0.0.1:<port>` Host, and pass Origin and `Sec-Fetch-Site` checks when those headers are present.
+- These checks reduce cross-site browser access; they are not authentication and do not isolate the endpoints from another local process able to make a conforming loopback request.
 
-## Limits
+Treat `captureInput: full` as local access to complete model inputs.
 
-- Provider usage exposes token totals, not provider cache keys or token offsets.
-- The local comparison cannot observe calls from another process or calls evicted before this plugin saw them.
-- Capture occurs before provider-specific serialization, so the exact wire payload may differ.
-- Call TTFT is not a direct measurement of provider Prefill execution time.
+## Technical notes and limits
+
+- Provider usage exposes token totals, not cache keys or token offsets. Prefix stability is diagnostic evidence, not a provider cache verdict.
+- Local comparison cannot observe calls from another process, calls made before the plugin loaded, or calls already evicted from memory.
+- Conversation calls use DSH's shared AgentLoop request identity when available. With older module-local identity registries, an unclassified request carrying a Session id is treated as a conversation; an unclassified sessionless request remains direct.
+- Each retry remains a separate attempt. Call TTFT is a Prefill proxy, not direct Prefill execution time.
+
+## Uninstall
+
+```sh
+dsh plugin --profile web remove @kober-basket/dsh-cachescope
+```
+
+Restart DSH after changing the profile.
 
 ## Development
 

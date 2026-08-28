@@ -2,20 +2,26 @@
 
 [English](README.md) | 中文
 
-CacheScope 是 DeepSeek Harness 的提示词缓存可观测插件。它记录每次 `llm/stream` 调用，结合提供方标准化 usage 与相邻 DSH 逻辑输入的本地比较，并在不修改模型请求、不注册模型可见工具的前提下提供桌面诊断页。
+**看懂一次模型调用究竟命中了多少 Prompt Cache，以及没命中时输入哪里变了。**
+
+CacheScope 将 Provider 回传的缓存 Token 用量与相邻 DSH 逻辑输入的变化放在同一页。它记录观察到的 `llm/stream` 调用，并在不修改模型请求、不注册模型可见工具的前提下提供桌面诊断页。
+
+![CacheScope 诊断页：Provider 缓存用量、相邻输入变化与层级输入检查器](assets/cachescope-dashboard.jpg)
+
+*截图使用合成调用数据，Provider 数字仅用于展示。*
 
 ## 安装
 
-将组合包安装到 Web profile，然后启动该 profile：
+将组合包安装到 Web profile，然后启动 DSH：
 
 ```sh
 dsh plugin --profile web add @kober-basket/dsh-cachescope
 dsh web
 ```
 
-打开 [http://127.0.0.1:3080/cachescope](http://127.0.0.1:3080/cachescope)。可安装组合包会保留近期受限的完整逻辑输入，并观察对话、标题、压缩和直接调用。诊断页初始只筛选对话；清空用途筛选即可检查所有已观察的模型调用。
+打开 [http://127.0.0.1:3080/cachescope](http://127.0.0.1:3080/cachescope)。
 
-如需禁止保留提示词正文，请将以下配置项加入 profile 的 `cordis.patch.yml`，然后重启 DSH：
+> **Prompt 隐私提醒：**安装包默认启用 `captureInput: full`。默认情况下，DSH 进程内存最多保留最近 12 次完整逻辑输入，每次上限为 2,000,000 UTF-8 JSON 字节。如不需要检查完整输入，请在发送敏感 Prompt 前改为下面的仅元数据配置。
 
 ```yaml
 - id: cachescope
@@ -24,61 +30,101 @@ dsh web
     captureInput: metadata
 ```
 
-## 展示内容
+修改 profile 后请重启 DSH。
 
-- 选中调用的 Provider 标准化 Cache Read、未缓存输入、Cache Write、输出及 `Cache Read / Prompt`；当前筛选的 Token 加权聚合作为次级信息保留。
-- 对相邻可比较调用进行 Token 桶对账，用“上次未缓存 + Prompt 变化 − Cache Read 变化 − Cache Write 变化”解释本次未缓存量。
-- 每次调用的 Call TTFT、中位与 P95 Call TTFT、总耗时、状态、用途、提供方、模型和可选成本估算。
-- 对未变化输入、仅追加增长、系统提示词变化、工具变化和历史改写的本地前缀分类。
-- 惰性展开的 JSON 层级，标记稳定候选、本地首个差异、下游内容以及没有可比较基线的区域。
-- Session、Provider、模型、用途和调用状态筛选会重新计算当前可见汇总，并将每次重试保留为独立调用；调用可按时间、缓存读取占比或 Call TTFT 排序。
-- 实时轮询会跟随最新的可见调用；手动点选某一行后固定该调用，新调用到达时不会抢走当前详情。
-- 可复制当前筛选的诊断元数据用于 Issue 与 Discussion，不包含完整 Prompt 正文。
+## 快速开始：比较两轮会话
+
+1. 在一个 DSH 对话中发送第一条消息，建立本地比较基线。
+2. 在同一 Session 中发送第二条消息，期间不要更换 Provider、模型、System Prompt 或已启用工具。
+3. 在 CacheScope 中选择第二次对话调用。先看顶部该调用的 Provider Cache Read 比例，再检查相邻输入诊断和带颜色的输入树。
+
+插件观察到的第一次调用没有本地比较基线。如果 Provider adapter 没有携带 Cache Read usage 字段，Cache Read 也会保持“未报告”；字段缺失不按零处理。
+
+表格初始只筛选对话调用。清空用途筛选即可纳入标题生成、压缩和直接模型调用。
+
+## 可以诊断什么
+
+- 单次调用有多少 Prompt 被报告为 Cache Read，以及未缓存输入、Cache Write、输出和当前筛选内仍保留调用的 Token 加权聚合。
+- 相邻可比较调用的未缓存 Token 桶为何变化：`本次未缓存 = 上次未缓存 + ΔPrompt − ΔCache Read − ΔCache Write`。
+- DSH 逻辑输入是完全相同、仅末尾追加，还是发生了 System、Tools、路由或参数变化以及历史改写。
+- 哪些输入区域是稳定前缀候选、本地首个差异、受前置变化影响的下游区域，或没有可比较基线的区域。
+- Call TTFT、中位和 P95 Call TTFT、总耗时、状态、用途、Provider、模型、重试和可选本地成本估算。
+- Session、Provider、模型、用途、生命周期和证据筛选，诊断排序、实时跟随，以及用于 Issue 或 Discussion 的可复制元数据。
 
 ## 如何理解证据
 
-Token 条展示经 DSH adapter 标准化的 Provider 回传证据。只有适配器携带对应 usage 字段时才展示 Cache Read；字段缺失不按零处理。未缓存区间是适配器标准化后的输入 token 数，不是本轮新增或变化的输入 token 数。
+| 证据 | 来源与含义 | 不代表 |
+|---|---|---|
+| 选中调用的 `Cache Read / Prompt` | DSH adapter 对该次调用 Provider usage 的标准化结果。 | 本地 Diff 比例或 DeepSeek 控制台聚合。 |
+| 当前筛选的加权比例 | 对当前仍保留且可见、并携带 Cache Read 的调用计算 `Σ Cache Read / Σ Prompt`。 | Provider 控制台可能采用的不同时间窗口和调用集合。 |
+| 未缓存输入 | Adapter 标准化后的未缓存输入 Token 桶。 | 回复长度，或本轮新增、变化的 Token 数量。 |
+| 输入树颜色 | 与同一 Session、同一用途的上一条进程内调用比较。 | Provider 将某区域用作 cache key，或这些具体 Token 确实来自缓存。 |
+| Token 对账 | 解释相邻已报告 Token 桶如何变化的算术关系。 | Provider cache key、Token offset 或缓存决策原因。 |
+| Call TTFT | 从 CacheScope 开始迭代模型流到首个非空 Token 的时间。 | 独立的 Provider Prefill 耗时；其中还包含排队和网络时间。 |
 
-诊断页严格分开三个范围：主百分比计算选中单次调用的 `Cache Read / Prompt`，其下方小字展示当前进程与筛选条件下的 Token 加权聚合，本地比较则使用同一 Session/同一用途的上一调用。Output Token 不进入任一命中率。加权聚合只对携带 Cache Read 的调用计算 `Σ Cache Read / Σ Prompt`。它不是 DeepSeek 控制台聚合，二者的时间窗口和调用集合可能不同。
-
-插件优先使用 DSH 跨包共享的 AgentLoop 请求身份来识别对话。旧版 DSH 的身份注册表只在单个模块副本内有效时，携带 Session id 且没有辅助用途标记的请求按对话处理；没有 Session id 的未分类请求仍按直接调用处理。
-
-对相邻可比较调用，CacheScope 会展示恒等式 `本次未缓存 = 上次未缓存 + ΔPrompt − ΔCache Read − ΔCache Write`。它解释未缓存 Token 桶为什么变化，不会还原 Provider cache key 或逐 Token 位置。
-
-JSON 颜色是 DSH 侧推断。CacheScope 只将当前逻辑输入与同一 Session、同一用途的上一条进程内调用比较。未变化区域是有利于缓存的前缀候选，但不能证明提供方将其作为 cache key，也不能证明这些具体 token 来自缓存。
-
-Call TTFT 从 CacheScope 开始迭代模型流时计时，到首个非空 token 结束。它包含排队和网络耗时，因此只是 Prefill 代理指标，而不是独立的 Prefill 耗时。
+Output Token 不进入任何缓存比例。输入层级展示 Provider 专用序列化之前捕获的 DSH 逻辑模型输入，因此可能与实际 wire payload 不同。
 
 ## 配置
 
-下表列出插件 schema 默认值。可安装组合包会将 `captureInput` 覆盖为 `full`，并保留 schema 的 `includeAuxiliary: true` 默认值；profile 自己的 patch 始终具有最终决定权。
+Schema 默认值用于直接挂载插件的场景。发布的可安装组合包只会将 `captureInput` 覆盖为 `full`；profile 自己的 patch 始终具有最终决定权。
 
-| 配置键 | 默认值 | 作用 |
-|---|---:|---|
-| `captureInput` | `metadata` | 只保留指纹和指标；设置为 `full` 时保留受限的完整逻辑输入。 |
-| `maxAttempts` | `500` | 内存中最多保留的模型调用次数。 |
-| `rawRetentionAttempts` | `12` | 最多允许保留完整输入的近期调用次数。 |
-| `maxRawInputBytes` | `2000000` | 单次完整输入允许保留的最大 UTF-8 JSON 字节数。 |
-| `refreshMs` | `1500` | 诊断页轮询间隔，单位为毫秒。 |
-| `logAttempts` | `true` | 每次调用后输出一条仅含元数据的摘要。 |
-| `includeAuxiliary` | `true` | 纳入压缩、标题生成和直接模型调用。 |
-| `dashboard` | `true` | 存在回环 WebServer 时注册诊断页。 |
-| `pricing` | 未设置 | 用于未缓存输入、Cache Read、Cache Write 和输出的可选币种及每百万 token 单价。 |
+| 配置键 | Schema 默认值 | 安装包实际值 | 作用 |
+|---|---:|---:|---|
+| `captureInput` | `metadata` | `full` | 只保留指纹和指标，或保留受限的完整逻辑输入。 |
+| `maxAttempts` | `500` | `500` | 进程内存中最多保留的调用次数，超出后淘汰旧调用。 |
+| `rawRetentionAttempts` | `12` | `12` | 最多允许保留完整输入的近期调用次数。 |
+| `maxRawInputBytes` | `2000000` | `2000000` | 单次完整输入允许保留的最大 UTF-8 JSON 字节数。 |
+| `refreshMs` | `1500` | `1500` | 诊断页轮询间隔，单位为毫秒。 |
+| `logAttempts` | `true` | `true` | 每次调用后输出一条仅含元数据的摘要。 |
+| `includeAuxiliary` | `true` | `true` | 纳入压缩、标题生成和直接调用。 |
+| `dashboard` | `true` | `true` | WebServer 绑定到回环地址时注册诊断页。 |
+| `pricing` | 未设置 | 未设置 | 用于本地成本估算的可选币种与每百万 Token 单价。 |
 
-## 数据处理
+### 可选价格配置
 
-- 所有记录只存在于进程内存，DSH 停止时全部消失。
+请按当前 Provider 价格表填写全部四项费率；CacheScope 不内置或更新价格表。
+
+```yaml
+- id: cachescope
+  name: '@kober-basket/dsh-cachescope'
+  config:
+    pricing:
+      currency: CNY
+      uncachedInputPerMillion: 0 # 请替换为当前费率
+      cacheReadPerMillion: 0 # 请替换为当前费率
+      cacheWritePerMillion: 0 # 请替换为当前费率
+      outputPerMillion: 0 # 请替换为当前费率
+```
+
+在依赖成本估算前，请替换全部零值。CacheScope 使用标准化 usage 字段和你填写的数值；示例不包含任何当前或推荐 Provider 价格。
+
+## 数据处理与本机访问
+
+- 调用记录和保留的完整输入位于 DSH 进程内存中。DSH 进程停止后，服务端副本消失。
+- 完整输入可能包含 System Prompt 正文、工具 schema、消息和请求参数。设置 `captureInput: metadata` 可禁止保留 Prompt 正文。
 - 元数据指纹使用每个进程随机生成的 HMAC 密钥，无法跨次启动比较。
-- 可安装组合包会在数量与字节上限内保留完整系统提示词、工具 schema 和消息；设置 `captureInput: metadata` 可禁止保留提示词正文。
-- 轮询响应仅包含元数据；浏览器通过独立接口读取当前选中的完整输入，并在指纹未变化时复用结果。
-- 只有 WebServer 绑定到 `127.0.0.1` 时才注册诊断页；每个请求还必须来自回环地址并满足同源检查。
+- 轮询响应只包含元数据。诊断页通过独立接口读取当前选中的完整输入，响应使用 `Cache-Control: no-store`，展示期间内容会保留在当前页面的 JavaScript 内存中。
+- 点击**复制 JSON**还会将选中的完整输入写入操作系统剪贴板；在内容被替换或清除前，它可能比页面和 DSH 进程存在得更久。
+- `logAttempts` 只输出元数据摘要；这些日志是否持久保存取决于宿主日志配置。
+- 只有 DSH WebServer 绑定到 `127.0.0.1` 时才注册诊断页。请求必须来自回环地址、使用预期的 `127.0.0.1:<port>` Host，并在 Origin 和 `Sec-Fetch-Site` 请求头存在时通过检查。
+- 这些检查用于降低浏览器跨站访问风险，不提供身份认证，也不能隔离能够构造合规回环请求的其他本机进程。
 
-## 限制
+请将 `captureInput: full` 视为允许本机访问完整模型输入。
 
-- 提供方 usage 只给出 token 总量，不提供 cache key 或 token offset。
-- 本地比较无法观察其他进程的调用，也无法观察插件开始记录前已经被淘汰的调用。
-- 捕获发生在提供方专用序列化之前，因此实际协议请求可能不同。
-- Call TTFT 不是提供方 Prefill 执行时间的直接测量值。
+## 技术说明与限制
+
+- Provider usage 只暴露 Token 总量，不提供 cache key 或 Token offset。前缀稳定只是诊断证据，不是 Provider 缓存结论。
+- 本地比较无法观察其他进程、插件加载前或已从内存淘汰的调用。
+- 插件优先使用 DSH 跨包共享的 AgentLoop 请求身份识别对话。对于身份注册表只在模块副本内有效的旧版 DSH，携带 Session id 的未分类请求按对话处理；没有 Session id 的未分类请求仍按直接调用处理。
+- 每次重试作为独立调用保留。Call TTFT 是 Prefill 代理指标，不是 Prefill 执行时间的直接测量值。
+
+## 卸载
+
+```sh
+dsh plugin --profile web remove @kober-basket/dsh-cachescope
+```
+
+修改 profile 后请重启 DSH。
 
 ## 开发
 

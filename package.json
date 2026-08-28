@@ -16,7 +16,9 @@
   "files": [
     "lib/**/*.js",
     "lib/**/*.d.ts",
-    "cordis.patch.yml"
+    "assets/*.jpg",
+    "cordis.patch.yml",
+    "screenshots.json"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
