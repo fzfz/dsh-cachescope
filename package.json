@@ -1,6 +1,6 @@
 {
   "name": "@kober-basket/dsh-cachescope",
-  "version": "0.1.2-beta.0",
+  "version": "0.1.2-beta.1",
   "description": "Prompt-cache observability and logical-input diagnostics for DeepSeek Harness",
   "type": "module",
   "main": "./lib/index.js",
