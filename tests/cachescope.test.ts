@@ -28,6 +28,18 @@ const CONFIG: DiagnosticsConfig = {
 }
 
 describe('installable bundle', () => {
+  it('builds its exported entry point when installed from Git', async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as {
+      exports?: { '.'?: { default?: string } }
+      scripts?: Record<string, string>
+    }
+
+    assert.equal(manifest.exports?.['.']?.default, './lib/index.js')
+    assert.equal(manifest.scripts?.prepare, 'npm run build')
+  })
+
   it('captures bounded complete inputs across all model-call purposes', async () => {
     const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
 
