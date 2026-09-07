@@ -1,140 +1,107 @@
-# CacheScope
+# DSH Desktop 的 CacheScope 插件
 
 [English](README.md) | 中文
 
-**看懂一次模型调用究竟命中了多少 Prompt Cache，以及没命中时输入哪里变了。**
+**CacheScope 仅支持 DSH Desktop。** 插件在桌面应用中提供原生侧栏入口、诊断面板和设置页，不支持独立运行的 Harness CLI 或浏览器部署。
 
-CacheScope 将 Provider 回传的缓存 Token 用量与相邻 DSH 逻辑输入的变化放在同一页。它记录观察到的 `llm/stream` 调用，并在不修改模型请求、不注册模型可见工具的前提下提供桌面诊断页。
+## 支持版本
 
-![CacheScope 诊断页：Provider 缓存用量、相邻输入变化与层级输入检查器](assets/cachescope-dashboard.jpg)
+| 组件 | 支持目标 |
+| --- | --- |
+| DSH Desktop | [fzfz/dsh-desktop](https://github.com/fzfz/dsh-desktop)，版本 **0.1.1**，提交 **`f2a27b4461e8c15d21268533efb7b99bb9bb14f2`** |
+| 内置 DeepSeek Harness | **0.1.2-rc.1** |
+| Cordis / Schemastery | **4.0.2 / 3.18.2**，由该 desktop 提供 |
+| React / React DOM | **18.3.1**，由该 desktop 提供 |
 
-*截图使用合成调用数据，Provider 数字仅用于展示。*
+兼容范围按以下提交确定，不能只根据 desktop 的 package.json 版本号判断。
 
-## 安装
+| Desktop 仓库 / 提交 | 内置 Harness | 兼容结论 |
+| --- | --- | --- |
+| `fzfz/dsh-desktop@f2a27b4`（包版本 0.1.1） | 0.1.2-rc.1 | 已支持；隔离宿主安装及原生界面验证通过 |
+| `dataelement/dsh-desktop@64e3dfe9cf92361b413782959170560b6491072d`（main，包版本 0.1.1） | 0.1.2-rc.1 | 源码接口兼容；尚未进行上游宿主集成测试 |
+| 上游发布标签 `v0.7.2`（包版本 0.1.1） | 0.1.2-alpha.1 | 不支持：不满足插件的精确 Host 依赖版本 |
+| 上游发布标签 `v0.1.1`（包版本 0.1.0） | 0.1.0-rc.6 | 不支持：不满足插件的精确 Host 依赖版本 |
 
-将组合包安装到 Web profile，然后启动 DSH：
+其他提交及发布标签尚未验证。上游源码对比依据见[兼容性报告](docs/desktop-compatibility.md)。
 
-```sh
-dsh plugin --profile web add @kober-basket/dsh-cachescope
-dsh web
-```
+插件使用 desktop 的设置服务、Client 加载器、UI 控件和侧栏插槽，不打包另一份 React。Host 依赖使用与上述目标匹配的精确版本。
 
-打开 [http://127.0.0.1:3080/cachescope](http://127.0.0.1:3080/cachescope)。
+## 安装到 DSH Desktop
 
-> **Prompt 隐私提醒：**安装包默认启用 `captureInput: full`。默认情况下，DSH 进程内存最多保留最近 12 次完整逻辑输入，每次上限为 2,000,000 UTF-8 JSON 字节。如不需要检查完整输入，请在发送敏感 Prompt 前改为下面的仅元数据配置。
-
-```yaml
-- id: cachescope
-  name: '@kober-basket/dsh-cachescope'
-  config:
-    captureInput: metadata
-```
-
-修改 profile 后请重启 DSH。
-
-## 快速开始：比较两轮会话
-
-1. 在一个 DSH 对话中发送第一条消息，建立本地比较基线。
-2. 在同一 Session 中发送第二条消息，期间不要更换 Provider、模型、System Prompt 或已启用工具。
-3. 在 CacheScope 中选择第二次对话调用。先看顶部该调用的 Provider Cache Read 比例，再检查相邻输入诊断和带颜色的输入树。
-
-插件观察到的第一次调用没有本地比较基线。如果 Provider adapter 没有携带 Cache Read usage 字段，Cache Read 也会保持“未报告”；字段缺失不按零处理。
-
-表格初始只筛选对话调用。清空用途筛选即可纳入标题生成、压缩和直接模型调用。
-
-## 可以诊断什么
-
-- 单次调用有多少 Prompt 被报告为 Cache Read，以及未缓存输入、Cache Write、输出和当前筛选内仍保留调用的 Token 加权聚合。
-- 相邻可比较调用的未缓存 Token 桶为何变化：`本次未缓存 = 上次未缓存 + ΔPrompt − ΔCache Read − ΔCache Write`。
-- DSH 逻辑输入是完全相同、仅末尾追加，还是发生了 System、Tools、路由或参数变化以及历史改写。
-- 哪些输入区域是稳定前缀候选、本地首个差异、受前置变化影响的下游区域，或没有可比较基线的区域。
-- Call TTFT、中位和 P95 Call TTFT、总耗时、状态、用途、Provider、模型、重试和可选本地成本估算。
-- Session、Provider、模型、用途、生命周期和证据筛选，诊断排序、实时跟随，以及用于 Issue 或 Discussion 的可复制元数据。
-
-## 如何理解证据
-
-| 证据 | 来源与含义 | 不代表 |
-|---|---|---|
-| 选中调用的 `Cache Read / Prompt` | DSH adapter 对该次调用 Provider usage 的标准化结果。 | 本地 Diff 比例或 DeepSeek 控制台聚合。 |
-| 当前筛选的加权比例 | 对当前仍保留且可见、并携带 Cache Read 的调用计算 `Σ Cache Read / Σ Prompt`。 | Provider 控制台可能采用的不同时间窗口和调用集合。 |
-| 未缓存输入 | Adapter 标准化后的未缓存输入 Token 桶。 | 回复长度，或本轮新增、变化的 Token 数量。 |
-| 输入树颜色 | 与同一 Session、同一用途的上一条进程内调用比较。 | Provider 将某区域用作 cache key，或这些具体 Token 确实来自缓存。 |
-| Token 对账 | 解释相邻已报告 Token 桶如何变化的算术关系。 | Provider cache key、Token offset 或缓存决策原因。 |
-| Call TTFT | 从 CacheScope 开始迭代模型流到首个非空 Token 的时间。 | 独立的 Provider Prefill 耗时；其中还包含排队和网络时间。 |
-
-Output Token 不进入任何缓存比例。输入层级展示 Provider 专用序列化之前捕获的 DSH 逻辑模型输入，因此可能与实际 wire payload 不同。
-
-## 配置
-
-Schema 默认值用于直接挂载插件的场景。发布的可安装组合包只会将 `captureInput` 覆盖为 `full`；profile 自己的 patch 始终具有最终决定权。
-
-| 配置键 | Schema 默认值 | 安装包实际值 | 作用 |
-|---|---:|---:|---|
-| `captureInput` | `metadata` | `full` | 只保留指纹和指标，或保留受限的完整逻辑输入。 |
-| `maxAttempts` | `500` | `500` | 进程内存中最多保留的调用次数，超出后淘汰旧调用。 |
-| `rawRetentionAttempts` | `12` | `12` | 最多允许保留完整输入的近期调用次数。 |
-| `maxRawInputBytes` | `2000000` | `2000000` | 单次完整输入允许保留的最大 UTF-8 JSON 字节数。 |
-| `refreshMs` | `1500` | `1500` | 诊断页轮询间隔，单位为毫秒。 |
-| `logAttempts` | `true` | `true` | 每次调用后输出一条仅含元数据的摘要。 |
-| `includeAuxiliary` | `true` | `true` | 纳入压缩、标题生成和直接调用。 |
-| `dashboard` | `true` | `true` | WebServer 绑定到回环地址时注册诊断页。 |
-| `pricing` | 未设置 | 未设置 | 用于本地成本估算的可选币种与每百万 Token 单价。 |
-
-### 可选价格配置
-
-请按当前 Provider 价格表填写全部四项费率；CacheScope 不内置或更新价格表。
-
-```yaml
-- id: cachescope
-  name: '@kober-basket/dsh-cachescope'
-  config:
-    pricing:
-      currency: CNY
-      uncachedInputPerMillion: 0 # 请替换为当前费率
-      cacheReadPerMillion: 0 # 请替换为当前费率
-      cacheWritePerMillion: 0 # 请替换为当前费率
-      outputPerMillion: 0 # 请替换为当前费率
-```
-
-在依赖成本估算前，请替换全部零值。CacheScope 使用标准化 usage 字段和你填写的数值；示例不包含任何当前或推荐 Provider 价格。
-
-## 数据处理与本机访问
-
-- 调用记录和保留的完整输入位于 DSH 进程内存中。DSH 进程停止后，服务端副本消失。
-- 完整输入可能包含 System Prompt 正文、工具 schema、消息和请求参数。设置 `captureInput: metadata` 可禁止保留 Prompt 正文。
-- 元数据指纹使用每个进程随机生成的 HMAC 密钥，无法跨次启动比较。
-- 轮询响应只包含元数据。诊断页通过独立接口读取当前选中的完整输入，响应使用 `Cache-Control: no-store`，展示期间内容会保留在当前页面的 JavaScript 内存中。
-- 点击**复制 JSON**还会将选中的完整输入写入操作系统剪贴板；在内容被替换或清除前，它可能比页面和 DSH 进程存在得更久。
-- `logAttempts` 只输出元数据摘要；这些日志是否持久保存取决于宿主日志配置。
-- 只有 DSH WebServer 绑定到 `127.0.0.1` 时才注册诊断页。请求必须来自回环地址、使用预期的 `127.0.0.1:<port>` Host，并在 Origin 和 `Sec-Fetch-Site` 请求头存在时通过检查。
-- 这些检查用于降低浏览器跨站访问风险，不提供身份认证，也不能隔离能够构造合规回环请求的其他本机进程。
-
-请将 `captureInput: full` 视为允许本机访问完整模型输入。
-
-## 技术说明与限制
-
-- Provider usage 只暴露 Token 总量，不提供 cache key 或 Token offset。前缀稳定只是诊断证据，不是 Provider 缓存结论。
-- 本地比较无法观察其他进程、插件加载前或已从内存淘汰的调用。
-- 插件优先使用 DSH 跨包共享的 AgentLoop 请求身份识别对话。对于身份注册表只在模块副本内有效的旧版 DSH，携带 Session id 的未分类请求按对话处理；没有 Session id 的未分类请求仍按直接调用处理。
-- 每次重试作为独立调用保留。Call TTFT 是 Prefill 代理指标，不是 Prefill 执行时间的直接测量值。
-
-## 卸载
+从本仓库构建 `.tgz` 包，然后安装到 **DSH Desktop 所属的 web profile**。若桌面插件安装器接受本地包，可直接选择该包。等价命令使用 desktop 自带的 DSH 入口及其 Harness 数据目录：
 
 ```sh
-dsh plugin --profile web remove @kober-basket/dsh-cachescope
+DSH_HOME="<desktop 的 Harness 数据目录>" node "<desktop 自带的 DSH 入口>" \
+  plugin --profile web add "/absolute/path/to/kober-basket-dsh-cachescope-0.1.2.tgz" --ignore-scripts
 ```
 
-修改 profile 后请重启 DSH。
+安装后重启 DSH Desktop。安装到独立的全局 `dsh` profile 不会把插件装入 desktop。
 
-## 开发
+## 打开与使用
+
+1. 点击 desktop 左侧的 **CacheScope**。侧栏收起后仍可使用图标入口。
+2. 开启记录，在同一会话中发送两条消息。
+3. 选择一次调用，查看供应商报告的缓存用量、耗时及相邻输入差异。
+4. 使用 Session、供应商、模型、用途、状态和证据筛选调用；汇总统计随筛选结果更新。
+
+诊断面板使用 desktop 原生控件并跟随主题。关闭面板或按 Escape 后返回原会话，输入草稿保持原状。保留的 `/cachescope` 是现有诊断路由，使用者不需要手动输入 URL。
+
+## 记录设置
+
+打开 **设置 → CacheScope**。
+
+| 设置 | 默认值 | 行为 |
+| --- | --- | --- |
+| 记录模型调用 | 开启 | 在进程内存中记录缓存用量、耗时、输入元数据和比较基线。 |
+| 保留完整输入 | 安装包默认开启 | 在调用数量和单次输入大小限制内保留完整逻辑输入。关闭后清除 Host 和已打开原生面板中的输入正文。 |
+| 向桌面日志写入调用摘要 | 开启 | 将只含元数据的调用摘要交给 desktop 日志系统。 |
+
+更改通过 desktop 设置服务保存并立即生效。关闭记录后，插件停止采集、输入分析和调用摘要日志；历史记录仍可查看，进行中的记录标记为“记录已停止”。已有 desktop 日志保持原状。
+
+重新开启后只记录新的调用；关闭前创建的模型流不会恢复写入。第一条新调用没有比较基线。记录关闭期间，另外两个选项保留已保存的值。**暂停刷新**只暂停面板定时查询，不会停止 Host 记录。
+
+## 诊断功能
+
+- 展示 Cache Read、Cache Write、未缓存输入、输出及 Token 加权缓存比例。
+- 展示单次调用的 TTFT、总耗时，以及筛选范围的 TTFT 中位数与 P95。
+- 比较相邻调用的 System、工具、消息、模型路由和请求参数。
+- 通过 Token 差额公式解释报告的未缓存输入量变化。
+- 通过输入树颜色区分稳定前缀、首个变化或新增、前序变化之后的区域以及无比较基线。
+- 按所选调用加载完整输入，支持 JSON 展开、收起、重试和复制。
+- 支持筛选、按时间或缓存比例或 TTFT 排序、跟随最新调用、手动刷新及复制筛选后的元数据。
+- 使用显式配置的价格估算费用。
+
+缺失的 usage 数据显示为未报告，不按零处理。输出 Token 不参与缓存比例。输入比较针对供应商序列化之前的 DSH 逻辑输入，颜色不表示供应商缓存命中位置。Call TTFT 包含网络和排队时间。
+
+## 留存与高级配置
+
+调用记录在 Harness 进程停止后消失。完整输入可能包含 System 正文、工具定义、消息和参数。复制完整输入会写入操作系统剪贴板，其内容可能在进程结束后继续存在。
+
+以下参数继续通过插件配置提供：
+
+| 配置项 | 默认值 | 含义 |
+| --- | --- | --- |
+| `maxAttempts` | `500` | 最多保留的调用数。 |
+| `rawRetentionAttempts` | `12` | 最多保留完整输入的近期调用数。 |
+| `maxRawInputBytes` | `2000000` | 单次完整输入的 UTF-8 JSON 字节上限。 |
+| `refreshMs` | `1500` | 面板定时查询间隔，单位为毫秒。 |
+| `includeAuxiliary` | `true` | 包含会话压缩调用、标题生成调用和直接模型调用。 |
+| `dashboard` | `true` | 提供现有 HTML 路由；关闭后原生面板的数据查询仍然可用。 |
+| `pricing` | 未设置 | 币种及未缓存输入、缓存读取、缓存写入、输出的每百万 Token 单价。 |
+
+desktop 的 `cachescope` 设置覆盖插件配置中的 `recordingEnabled`、`captureInput` 和 `logAttempts`。完整输入留存数量不能超过调用留存数量。查询接口继续检查回环来源、Host 和同源访问。
+
+## 开发与验证
 
 ```sh
-npm install
+npm ci --ignore-scripts
 npm run typecheck
 npm test
 npm run build
-npm pack --dry-run
+npm pack --ignore-scripts
 ```
+
+Client 产物由 desktop 模块加载器加载，不是独立网页。目标运行环境、测试和集成结果见[兼容性验证](docs/desktop-compatibility.md)。
 
 ## 许可证
 

@@ -28,3 +28,16 @@ for (const entry of await readdir(output)) {
   const rewritten = declaration.replace(/(["']\.\.?\/[^"']+)\.ts(["'])/g, '$1.js$2')
   if (rewritten !== declaration) await writeFile(path, rewritten)
 }
+
+// Desktop injects these modules. The Client artifact contains only CacheScope code.
+const { build } = await import('esbuild')
+const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+await build({
+  entryPoints: [join(root, 'src/client/index.tsx')],
+  outfile: join(root, 'client/client.js'), bundle: true, format: 'cjs', platform: 'browser',
+  target: 'es2022', jsx: 'automatic', loader: { '.css': 'text' },
+  external: ['react', 'react/jsx-runtime', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],
+  banner: { js: `window.__ModuleLoader__.load({ id: ${JSON.stringify(manifest.name)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;` },
+  footer: { js: 'return module.exports; } });' },
+  define: { 'process.env.NODE_ENV': '"production"' },
+})
