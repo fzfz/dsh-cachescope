@@ -8,6 +8,11 @@
     "rootDir": "src",
     "outDir": "lib"
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["tests"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "tests",
+    "src/client"
+  ]
 }

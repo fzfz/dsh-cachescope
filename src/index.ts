@@ -2,7 +2,11 @@
 import { randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
+import { Config } from './config.ts'
+import { plugin } from './contracts.ts'
+import { errors, type ErrorCode } from './errors.ts'
+import { installSettings } from './settings.ts'
+export { Config } from './config.ts'
 import { isAgentLoopRequest, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { CacheScope } from './diagnostics.ts'
@@ -16,48 +20,10 @@ import type {
 } from './types.ts'
 
 export const name = 'dsh-cachescope'
-export const inject = ['llm']
+export const inject = ['llm', 'settings']
 
-const DASHBOARD_PATH = '/cachescope'
-const DATA_PATH = '/cachescope/api'
-const INPUT_PATH = '/cachescope/api/input'
+const { dashboardPath: DASHBOARD_PATH, dataPath: DATA_PATH, inputPath: INPUT_PATH } = plugin
 const AGENT_LOOP_REQUESTS_KEY = Symbol.for('@deepseek-ai/dsh-llm/agent-loop-requests/v1')
-
-/** User-facing plugin configuration. All retained data remains process-local memory. */
-export interface Config {
-  /** Retain only fingerprints/metrics, or also retain the bounded exact DSH logical input. */
-  captureInput?: 'metadata' | 'full'
-  /** Maximum number of model-call attempts kept in memory. */
-  maxAttempts?: number
-  /** Maximum number of recent attempts whose complete inputs remain in memory. */
-  rawRetentionAttempts?: number
-  /** Maximum UTF-8 JSON bytes retained for one complete input. */
-  maxRawInputBytes?: number
-  /** Dashboard polling interval. */
-  refreshMs?: number
-  /** Print one metadata-only summary after each model-call attempt. */
-  logAttempts?: boolean
-  /** Include compaction, title generation, and direct non-AgentLoop calls. */
-  includeAuxiliary?: boolean
-  /** Register the dashboard when the composition has a loopback WebServer. */
-  dashboard?: boolean
-  /** Optional normalized-token rates for local cost estimates. */
-  pricing?: PricingConfig
-}
-
-export const Config: z<Config> = z.object({
-  captureInput: z.union(['metadata', 'full'] as const).default('metadata'),
-  maxAttempts: z.natural().min(1).max(5000).default(500),
-  rawRetentionAttempts: z.natural().max(100).default(12),
-  maxRawInputBytes: z.natural().min(1024).max(20_000_000).default(2_000_000),
-  refreshMs: z.natural().min(500).max(30_000).default(1500),
-  logAttempts: z.boolean().default(true),
-  includeAuxiliary: z.boolean().default(true),
-  dashboard: z.boolean().default(true),
-  // Schemastery materializes nested object fields even when omitted. Keep the
-  // optional object opaque here and validate it only when the user supplies it.
-  pricing: z.any(),
-})
 
 function validatePricing(pricing: PricingConfig | undefined): void {
   if (pricing === undefined) return
@@ -151,17 +117,22 @@ function send(
   else res.end(body)
 }
 
+function sendError(req: IncomingMessage, res: ServerResponse, code: ErrorCode): void {
+  const error = errors[code]
+  send(req, res, error.status, JSON.stringify({ error: { code, message: error.message } }), {
+    ...securityHeaders('application/json; charset=utf-8'),
+    ...(code === 'METHOD_NOT_ALLOWED' ? { Allow: 'GET, HEAD' } : {}),
+  })
+}
+
 function guardedRoute(handler: WebRoute['handler']): WebRoute['handler'] {
   return async (req, res) => {
     if (!trustedLoopbackRequest(req)) {
-      send(req, res, 403, 'Forbidden', securityHeaders('text/plain; charset=utf-8'))
+      sendError(req, res, 'FORBIDDEN')
       return
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      send(req, res, 405, 'Method Not Allowed', {
-        ...securityHeaders('text/plain; charset=utf-8'),
-        'Allow': 'GET, HEAD',
-      })
+      sendError(req, res, 'METHOD_NOT_ALLOWED')
       return
     }
     await handler(req, res)
@@ -201,12 +172,12 @@ function inputRoute(diagnostics: CacheScope): WebRoute {
     handler: guardedRoute((req, res) => {
       const id = new URL(req.url ?? INPUT_PATH, 'http://127.0.0.1').searchParams.get('id')
       if (id === null || !/^call-\d+$/.test(id)) {
-        send(req, res, 400, 'Invalid attempt id', securityHeaders('text/plain; charset=utf-8'))
+        sendError(req, res, 'INVALID_ATTEMPT')
         return
       }
       const input = diagnostics.input(id)
       if (input === undefined) {
-        send(req, res, 404, 'Attempt not found', securityHeaders('text/plain; charset=utf-8'))
+        sendError(req, res, 'ATTEMPT_NOT_FOUND')
         return
       }
       const body = JSON.stringify(input)
@@ -221,11 +192,12 @@ function observedStream(
   config: DiagnosticsConfig,
   options: GenerateOptions,
   source: AsyncIterable<StreamChunk>,
+  epoch: number,
 ): AsyncIterable<StreamChunk> {
   return (async function*(): AsyncGenerator<StreamChunk> {
     let handle: AttemptHandle | undefined
     try {
-      handle = diagnostics.begin(options, purposeOf(options))
+      if (diagnostics.canRecord(epoch)) handle = diagnostics.begin(options, purposeOf(options))
     } catch {
       safeLog(ctx, 'warn', '[cachescope] input analysis failed; the model stream is unaffected')
     }
@@ -233,7 +205,7 @@ function observedStream(
     let exhausted = false
     try {
       for await (const chunk of source) {
-        if (handle !== undefined) {
+        if (handle !== undefined && !handle.finalized && diagnostics.canRecord(epoch)) {
           try {
             diagnostics.observe(handle, chunk)
           } catch {
@@ -243,7 +215,7 @@ function observedStream(
         yield chunk
       }
       exhausted = true
-      if (handle !== undefined) {
+      if (handle !== undefined && !handle.finalized && diagnostics.canRecord(epoch)) {
         try {
           const record = diagnostics.complete(handle)
           if (config.logAttempts) logAttempt(ctx, record)
@@ -252,7 +224,7 @@ function observedStream(
         }
       }
     } catch (error: unknown) {
-      if (handle !== undefined) {
+      if (handle !== undefined && !handle.finalized && diagnostics.canRecord(epoch)) {
         try {
           const record = handle.record.finishKind === undefined
             ? diagnostics.fail(handle, error)
@@ -264,7 +236,7 @@ function observedStream(
       }
       throw error
     } finally {
-      if (!exhausted && handle !== undefined && !handle.finalized) {
+      if (!exhausted && handle !== undefined && !handle.finalized && diagnostics.canRecord(epoch)) {
         try {
           const record = handle.record.finishKind === undefined
             ? diagnostics.stop(handle, options.signal?.aborted === true)
@@ -280,27 +252,30 @@ function observedStream(
 
 /** Install cache observation and, when available, the loopback-only dashboard. */
 export function apply(ctx: Context, config: Config): void {
-  const resolved = config as DiagnosticsConfig
+  const resolved = { ...config } as DiagnosticsConfig
   if (resolved.rawRetentionAttempts > resolved.maxAttempts) {
     throw new Error('dsh-cachescope: rawRetentionAttempts cannot exceed maxAttempts')
   }
   validatePricing(resolved.pricing)
   const diagnostics = new CacheScope(ctx, resolved)
+  installSettings(ctx, resolved, diagnostics)
+  ctx.effect(() => () => diagnostics.configure({ recordingEnabled: false, captureInput: resolved.captureInput, logAttempts: false }), 'CacheScope recording cleanup')
 
   ctx.on('llm/stream', (options, next) => {
     // Preserve the waterfall's synchronous `next()` construction and exception timing.
+    const epoch = diagnostics.recordingEpoch()
     const source = next()
     if (!resolved.includeAuxiliary && !isConversationRequest(options)) return source
-    return observedStream(ctx, diagnostics, resolved, options, source)
+    if (!resolved.recordingEnabled) return source
+    return observedStream(ctx, diagnostics, resolved, options, source, epoch)
   })
 
-  if (!resolved.dashboard) return
   ctx.inject(['webServer'], (webCtx: Context) => {
     if (webCtx.webServer.host !== '127.0.0.1') {
       throw new Error('dsh-cachescope: dashboard requires WebServer host 127.0.0.1')
     }
     webCtx.effect(function*() {
-      yield webCtx.webServer.register(dashboardRoute(resolved))
+      if (resolved.dashboard) yield webCtx.webServer.register(dashboardRoute(resolved))
       yield webCtx.webServer.register(dataRoute(diagnostics))
       yield webCtx.webServer.register(inputRoute(diagnostics))
     }, 'dsh-cachescope dashboard routes')

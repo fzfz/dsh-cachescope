@@ -2,7 +2,6 @@
 import { performance } from 'node:perf_hooks'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { isTokenDelta } from '@deepseek-ai/dsh-llm'
 import { analyzeInput, diagnosePrefix } from './analysis.ts'
 import type {
   AttemptHandle,
@@ -14,10 +13,10 @@ import type {
   CostEstimate,
   DiagnosticsConfig,
   DiagnosticsSnapshot,
-  DiagnosticsSummary,
-  EvidenceCorrelation,
   InputAnalysis,
 } from './types.ts'
+import type { RecordingSettings } from './contracts.ts'
+import { summarizeAttempts } from './summary.ts'
 import { normalizeUsage } from './types.ts'
 
 interface ComparableAttempt {
@@ -53,40 +52,41 @@ function estimateCost(usage: CacheUsage, config: DiagnosticsConfig): CostEstimat
   return { amount, currency: pricing.currency }
 }
 
-function median(values: number[]): number | undefined {
-  if (values.length === 0) return undefined
-  values.sort((a, b) => a - b)
-  const middle = Math.floor(values.length / 2)
-  if (values.length % 2 === 1) return values[middle]!
-  return (values[middle - 1]! + values[middle]!) / 2
-}
-
-function nearestRank(values: number[], percentile: number): number | undefined {
-  if (values.length === 0) return undefined
-  const ordered = [...values].sort((a, b) => a - b)
-  const rank = Math.max(1, Math.ceil(ordered.length * percentile))
-  return ordered[rank - 1]
-}
-
-function isComparablePrefix(attempt: CacheAttempt): boolean {
-  return attempt.diagnosis.kind !== 'first-observation'
-    && attempt.diagnosis.kind !== 'route-or-options-changed'
-}
-
-function isPrefixFriendly(attempt: CacheAttempt): boolean {
-  return attempt.diagnosis.kind === 'identical-input'
-    || attempt.diagnosis.kind === 'append-only'
-}
-
 /** Bounded in-memory service behind CacheScope's diagnostics queries. */
 export class CacheScope extends Service {
   private sequence = 0
+  private epoch = 0
+  private readonly active = new Set<AttemptHandle>()
   private readonly attempts: CacheAttempt[] = []
   private readonly baselines = new Map<string, ComparableAttempt>()
   private readonly scopeByAttempt = new Map<string, string>()
 
   constructor(ctx: Context, private readonly config: DiagnosticsConfig) {
     super(ctx, 'cacheScope')
+  }
+
+  /** An epoch prevents a stream created before a stop from recording after restart. */
+  recordingEpoch(): number { return this.epoch }
+  canRecord(epoch: number): boolean { return this.config.recordingEnabled && epoch === this.epoch }
+
+  configure(next: RecordingSettings): void {
+    if (this.config.recordingEnabled && !next.recordingEnabled) {
+      this.epoch++
+      for (const handle of this.active) this.finalize(handle, 'recording-stopped')
+      this.baselines.clear()
+      this.scopeByAttempt.clear()
+    }
+    if (this.config.captureInput === 'full' && next.captureInput === 'metadata') {
+      for (const attempt of this.attempts) {
+        delete attempt.rawInput
+        attempt.rawState = 'disabled'
+      }
+      for (const handle of this.active) {
+        delete handle.record.rawInput
+        handle.record.rawState = 'disabled'
+      }
+    }
+    Object.assign(this.config, next)
   }
 
   /** Begin one llm/stream attempt and compare it with its previous session/purpose request. */
@@ -135,14 +135,17 @@ export class CacheScope extends Service {
       })
     }
     this.enforceRetention()
-    return { record, startedMonotonic: performance.now(), finalized: false }
+    const handle = { record, startedMonotonic: performance.now(), finalized: false }
+    this.active.add(handle)
+    return handle
   }
 
   /** Observe one stream chunk without modifying it. */
   observe(handle: AttemptHandle, chunk: StreamChunk): void {
+    if (handle.finalized) return
     const elapsed = roundedMilliseconds(performance.now() - handle.startedMonotonic)
     handle.record.firstChunkMs ??= elapsed
-    if (handle.record.firstTokenMs === undefined && isTokenDelta(chunk)) {
+    if (handle.record.firstTokenMs === undefined && ((chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') ? chunk.text !== '' : chunk.type === 'tool-call-delta' && (chunk.argumentsDelta !== '' || chunk.name !== undefined))) {
       handle.record.firstTokenMs = elapsed
     }
     if (chunk.type === 'usage') {
@@ -167,6 +170,7 @@ export class CacheScope extends Service {
 
   /** Mark an exception thrown by a downstream waterfall listener. */
   fail(handle: AttemptHandle, error: unknown): CacheAttempt {
+    if (handle.finalized) return handle.record
     handle.record.error = renderError(error)
     return this.finalize(handle, 'failed')
   }
@@ -185,10 +189,13 @@ export class CacheScope extends Service {
     })
     return {
       generatedAt: Date.now(),
+      recordingEnabled: this.config.recordingEnabled,
+      logAttempts: this.config.logAttempts,
+      refreshMs: this.config.refreshMs,
       captureInput: this.config.captureInput,
       includeAuxiliary: this.config.includeAuxiliary,
       rawRetentionAttempts: this.config.rawRetentionAttempts,
-      summary: this.summarize(),
+      summary: summarizeAttempts(attempts),
       attempts,
       notes: {
         cacheEvidence: 'Cache Read Token 来自 Harness 标准化 usage；未缓存输入是 Prompt 减去 Cache Read/Write 后的独立 Token 桶，不是本轮新增或变化 Token。字段缺失表示该 usage 未携带 Cache Read，不能按 0 处理。',
@@ -217,6 +224,7 @@ export class CacheScope extends Service {
   private finalize(handle: AttemptHandle, status: CacheAttempt['status']): CacheAttempt {
     if (handle.finalized) return handle.record
     handle.finalized = true
+    this.active.delete(handle)
     handle.record.status = status
     handle.record.finishedAt = Date.now()
     handle.record.durationMs = roundedMilliseconds(performance.now() - handle.startedMonotonic)
@@ -244,88 +252,5 @@ export class CacheScope extends Service {
     }
   }
 
-  private summarize(): DiagnosticsSummary {
-    let promptTokens = 0
-    let inputTokens = 0
-    let cacheReadTokens = 0
-    let cacheWriteTokens = 0
-    let outputTokens = 0
-    let reportedPromptTokens = 0
-    let reportedCacheAttempts = 0
-    let estimatedCost = 0
-    let pricedAttempts = 0
-    let comparablePrefixAttempts = 0
-    let prefixFriendlyAttempts = 0
-    const correlation: EvidenceCorrelation = {
-      comparedAttempts: 0,
-      prefixFriendlyWithRead: 0,
-      prefixFriendlyWithoutRead: 0,
-      prefixChangedWithRead: 0,
-      prefixChangedWithoutRead: 0,
-    }
-    const firstTokenValues: number[] = []
 
-    for (const attempt of this.attempts) {
-      const comparablePrefix = isComparablePrefix(attempt)
-      const prefixFriendly = isPrefixFriendly(attempt)
-      if (comparablePrefix) {
-        comparablePrefixAttempts++
-        if (prefixFriendly) prefixFriendlyAttempts++
-      }
-      if (comparablePrefix && attempt.usage?.cacheReadTokens !== undefined) {
-        correlation.comparedAttempts++
-        const hasRead = attempt.usage.cacheReadTokens > 0
-        if (prefixFriendly && hasRead) correlation.prefixFriendlyWithRead++
-        else if (prefixFriendly) correlation.prefixFriendlyWithoutRead++
-        else if (hasRead) correlation.prefixChangedWithRead++
-        else correlation.prefixChangedWithoutRead++
-      }
-      if (attempt.firstTokenMs !== undefined) firstTokenValues.push(attempt.firstTokenMs)
-      const usage = attempt.usage
-      if (usage !== undefined) {
-        promptTokens += usage.promptTokens
-        inputTokens += usage.inputTokens
-        cacheReadTokens += usage.cacheReadTokens ?? 0
-        cacheWriteTokens += usage.cacheWriteTokens ?? 0
-        outputTokens += usage.outputTokens
-        if (usage.cacheReadTokens !== undefined) {
-          reportedCacheAttempts++
-          reportedPromptTokens += usage.promptTokens
-        }
-      }
-      if (attempt.cost !== undefined) {
-        estimatedCost += attempt.cost.amount
-        pricedAttempts++
-      }
-    }
-
-    const cacheReadRatio = reportedPromptTokens === 0
-      ? undefined
-      : cacheReadTokens / reportedPromptTokens
-    const prefixFriendlyRatio = comparablePrefixAttempts === 0
-      ? undefined
-      : prefixFriendlyAttempts / comparablePrefixAttempts
-    const medianFirstTokenMs = median(firstTokenValues)
-    const p95FirstTokenMs = nearestRank(firstTokenValues, 0.95)
-    return {
-      attemptCount: this.attempts.length,
-      completedCount: this.attempts.filter(attempt => attempt.status === 'completed').length,
-      comparablePrefixAttempts,
-      prefixFriendlyAttempts,
-      promptTokens,
-      inputTokens,
-      cacheReadTokens,
-      cacheWriteTokens,
-      outputTokens,
-      correlation,
-      ...cacheReadRatio === undefined ? {} : { cacheReadRatio },
-      ...prefixFriendlyRatio === undefined ? {} : { prefixFriendlyRatio },
-      reportedCacheAttempts,
-      ...medianFirstTokenMs === undefined ? {} : { medianFirstTokenMs: roundedMilliseconds(medianFirstTokenMs) },
-      ...p95FirstTokenMs === undefined ? {} : { p95FirstTokenMs: roundedMilliseconds(p95FirstTokenMs) },
-      ...pricedAttempts === 0 || this.config.pricing === undefined
-        ? {}
-        : { estimatedCost: { amount: estimatedCost, currency: this.config.pricing.currency } },
-    }
-  }
 }

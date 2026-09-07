@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { describe, it } from 'node:test'
+import { TestSettings } from './settings-fixture.ts'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, {
   createUserMessage,
@@ -17,6 +18,7 @@ import type { DiagnosticsConfig } from '../src/types.ts'
 import { normalizeUsage } from '../src/types.ts'
 
 const CONFIG: DiagnosticsConfig = {
+  recordingEnabled: true,
   captureInput: 'full',
   maxAttempts: 20,
   rawRetentionAttempts: 1,
@@ -70,6 +72,7 @@ function request(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
 
 async function setup(overrides: Partial<DiagnosticsConfig> = {}): Promise<Context> {
   const ctx = new Context()
+  await ctx.plugin(TestSettings)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(CacheScopePlugin, { ...CONFIG, ...overrides })
   return ctx
@@ -1117,7 +1120,8 @@ describe('llm/stream observation', () => {
 describe('loopback dashboard', () => {
   it('serves captured attempts with security headers and rejects cross-site origins', async (t) => {
     const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(TestSettings)
+  await ctx.plugin(LlmRuntime)
     await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
     await ctx.plugin(CacheScopePlugin, { ...CONFIG, dashboard: true })
     t.after(async () => { await ctx.root.fiber.dispose() })

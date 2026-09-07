@@ -1,5 +1,6 @@
-# Git blob hashes for the last confirmed-consistent bilingual pair. Both languages
-# carry equal authority. After editing either side, update both and re-record with:
-#   git hash-object README.md README.zh.md
-README.md: 8fe9a1d7117c821c5d71098f9236efd53e602f9b
-README.zh.md: 012e57540239e73d9586e267752b9a5bff282d7f
+README.md:
+  language: en
+  counterpart: README.zh.md
+README.zh.md:
+  language: zh
+  counterpart: README.md

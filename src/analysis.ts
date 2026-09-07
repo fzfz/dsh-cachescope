@@ -1,7 +1,7 @@
 /** Build privacy-preserving fingerprints and compare adjacent logical model inputs. */
 import { createHmac, randomBytes } from 'node:crypto'
 import type { GenerateOptions, Message, ToolSchema } from '@deepseek-ai/dsh-llm'
-import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
+import { snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   CapturedGenerateInput,
   InputAnalysis,

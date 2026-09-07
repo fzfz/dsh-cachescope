@@ -12,6 +12,7 @@ export interface PricingConfig {
 
 /** Plugin configuration after Schemastery has supplied defaults. */
 export interface DiagnosticsConfig {
+  recordingEnabled: boolean
   captureInput: 'metadata' | 'full'
   maxAttempts: number
   rawRetentionAttempts: number
@@ -107,7 +108,7 @@ export interface EvidenceCorrelation {
 }
 
 /** Lifecycle outcome of one invocation of the llm/stream waterfall. */
-export type AttemptStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'consumer-stopped' | 'incomplete'
+export type AttemptStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'consumer-stopped' | 'incomplete' | 'recording-stopped'
 
 /** Public read model for one model-call attempt. */
 export interface CacheAttempt {
@@ -167,6 +168,9 @@ export interface DiagnosticsSummary {
 /** Complete snapshot returned by the local diagnostics Interface. */
 export interface DiagnosticsSnapshot {
   generatedAt: number
+  recordingEnabled: boolean
+  logAttempts: boolean
+  refreshMs: number
   captureInput: DiagnosticsConfig['captureInput']
   includeAuxiliary: boolean
   rawRetentionAttempts: number
