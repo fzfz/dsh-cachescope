@@ -96,6 +96,38 @@ describe('native desktop UI', () => {
     await unmount(); const finalRequests = requests; await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(requests, finalRequests)
     await ctx.root.fiber.dispose()
   })
+  it('selects complete rows by mouse and keyboard and shows both calls with signed differences', async () => {
+    const { ctx, diagnostics } = fixture(); const { scope } = scopeFixture()
+    const snapshot = diagnostics.snapshot()
+    globalThis.fetch = async url => new Response(JSON.stringify(String(url).includes('/input') ? diagnostics.input(new URL(String(url), 'http://localhost').searchParams.get('id')!) : snapshot))
+    await mount(<Dashboard scope={scope} t={t} />); await settle()
+    const cells = (label: string) => Array.from(container.querySelectorAll('.cs-comparison tbody tr')).find(row => row.firstElementChild?.textContent === label)!.textContent
+    assert.match(container.textContent!, /Previous call: call-1 → Current call: call-2/)
+    assert.equal(cells(t('read')), 'Cache Read8090+10')
+    assert.equal(cells(t('uncached')), 'Uncached input2010-10')
+    assert.equal(cells(t('prompt')), 'Prompt tokens1001000')
+    assert.equal(cells(t('write')), 'Cache Write———')
+    await click(t('expand')); assert.ok(container.querySelector('[data-inference="stable"]'))
+    const rows = container.querySelectorAll<HTMLElement>('.cs-call-list tbody tr')
+    const first = rows[1]!, second = rows[0]!
+    await act(async () => (first.children[1] as HTMLElement).click()); await settle()
+    assert.match(container.querySelector('.cs-detail h3')!.textContent!, /call-1/)
+    assert.equal(first.getAttribute('aria-selected'), 'true')
+    assert.equal(Array.from(container.querySelectorAll('button')).find(button => button.textContent === t('follow'))?.getAttribute('aria-pressed'), 'false')
+    assert.equal(cells(t('read')), 'Cache Read—80—')
+    for (const [row, key, id] of [[second, 'Enter', 'call-2'], [first, ' ', 'call-1']] as const) {
+      row.focus()
+      await act(async () => row.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
+      assert.match(container.querySelector('.cs-detail h3')!.textContent!, new RegExp(id))
+      assert.equal(document.activeElement, row)
+    }
+    await act(async () => second.click()); await settle()
+    snapshot.attempts = snapshot.attempts.filter(call => call.id !== 'call-1')
+    await click(t('refresh')); await settle()
+    assert.match(container.textContent!, /previous call is no longer retained/)
+    assert.equal(cells(t('read')), 'Cache Read—90—')
+    await unmount(); await ctx.root.fiber.dispose()
+  })
   it('renders input failures, supports retry and switches the selected call', async () => {
     const { ctx, diagnostics } = fixture(); const { scope } = scopeFixture()
     let failed = true
@@ -109,7 +141,7 @@ describe('native desktop UI', () => {
     await mount(<Dashboard scope={scope} t={t} />); await settle(); assert.match(container.textContent!, /could not be loaded/)
     failed = false; await click(t('retry')); await settle(); assert.ok(container.querySelector('.cs-input-inspector'))
     await click('call-1'); await settle(); assert.match(container.querySelector('.cs-detail h3')!.textContent!, /call-1/)
-    await click(t('focused')); assert.equal(container.querySelector('table'), null); await click(t('unfocus')); assert.ok(container.querySelector('table'))
+    await click(t('focused')); assert.equal(container.querySelector('.cs-call-list'), null); await click(t('unfocus')); assert.ok(container.querySelector('.cs-call-list'))
     await unmount(); await ctx.root.fiber.dispose()
   })
   it('registers sidebar/settings/panel contributions and closes the native Modal without touching a draft', async () => {

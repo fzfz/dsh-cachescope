@@ -71,6 +71,7 @@ export function Dashboard({ scope, t }: { scope: SettingsScope; t: Translate }) 
   }, [item?.id, item?.input.overallFingerprint, item?.rawState, canShowRaw, retryInput])
 
   const summary = summarizeAttempts(visible)
+  const selectCall = (id: string) => { setSelected(id); setFollow(false) }
   const prior = attempts.find(a => a.id === item?.diagnosis.comparedTo)
   const change = evolution(item?.usage, prior?.usage)
   const dictionaryChoices = (keys: TextKey[]) => keys.map(key => [key, t(key)] as [string, string])
@@ -105,11 +106,25 @@ export function Dashboard({ scope, t }: { scope: SettingsScope; t: Translate }) 
       {!item ? <p className="cs-empty">{t('empty')}</p> : <>
         <Button size="sm" onClick={() => setFocused(!focused)}>{t(focused ? 'unfocus' : 'focused')}</Button>
         <div className="cs-workspace" data-focused={focused}>
-          {!focused && <div className="cs-call-list"><table><thead><tr>{(['call', 'model', 'read', 'ttft', 'status'] as const).map(key => <th key={key}>{t(key)}</th>)}</tr></thead><tbody>{visible.map(call => <tr key={call.id} data-selected={item.id === call.id}><td><button type="button" aria-pressed={item.id === call.id} onClick={() => { setSelected(call.id); setFollow(false) }}>{call.id}</button></td><td>{call.model}</td><td>{percent(call.usage?.cacheReadRatio)}</td><td>{number(call.firstTokenMs)}</td><td>{t(call.status)}</td></tr>)}</tbody></table></div>}
+          {!focused && <div className="cs-call-list"><table><thead><tr>{(['call', 'model', 'read', 'ttft', 'status'] as const).map(key => <th key={key}>{t(key)}</th>)}</tr></thead><tbody>{visible.map(call => <tr key={call.id} data-selected={item.id === call.id} aria-selected={item.id === call.id} tabIndex={0} onClick={() => selectCall(call.id)} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectCall(call.id) } }}><td><button type="button" aria-pressed={item.id === call.id} tabIndex={-1}>{call.id}</button></td><td>{call.model}</td><td>{percent(call.usage?.cacheReadRatio)}</td><td>{number(call.firstTokenMs)}</td><td>{t(call.status)}</td></tr>)}</tbody></table></div>}
           <div className="cs-detail" aria-label={t('detail')}>
             <h3>{item.id} · {item.provider} / {item.model}</h3><p>{item.sessionId} · {t(item.purpose)} · {t(item.status)} · {new Date(item.startedAt).toLocaleString()}</p>
             <dl className="cs-token-grid">{([[ 'prompt', item.usage?.promptTokens ], ['read', item.usage?.cacheReadTokens], ['write', item.usage?.cacheWriteTokens], ['uncached', item.usage?.inputTokens], ['output', item.usage?.outputTokens], ['ttft', item.firstTokenMs], ['duration', item.durationMs]] as const).map(([label, value]) => <div key={label}><dt>{t(label)}</dt><dd>{value === undefined ? t('missing') : number(value)}</dd></div>)}</dl>
             <h4>{t('diagnosis')}</h4><p>{t(item.diagnosis.kind)}{item.diagnosis.comparedTo && ` · ${t('baseline')} ${item.diagnosis.comparedTo}`}</p>
+            <h4>{t('comparison')}</h4>
+            <p>{t('previousCall')}: {item.diagnosis.comparedTo ?? t('noPreviousCall')} → {t('currentCall')}: {item.id}</p>
+            {item.diagnosis.comparedTo && !prior && <p>{t('baselineEvicted')}</p>}
+            <div className="cs-comparison"><table aria-label={t('comparison')}><thead><tr><th scope="col">{t('metric')}</th><th scope="col">{t('previousValue')}</th><th scope="col">{t('currentValue')}</th><th scope="col">{t('difference')}</th></tr></thead><tbody>
+              {([
+                ['prompt', prior?.usage?.promptTokens, item.usage?.promptTokens],
+                ['read', prior?.usage?.cacheReadTokens, item.usage?.cacheReadTokens],
+                ['write', prior?.usage?.cacheWriteTokens, item.usage?.cacheWriteTokens],
+                ['uncached', prior?.usage?.inputTokens, item.usage?.inputTokens],
+                ['output', prior?.usage?.outputTokens, item.usage?.outputTokens],
+                ['ttft', prior?.firstTokenMs, item.firstTokenMs],
+                ['duration', prior?.durationMs, item.durationMs],
+              ] as const).map(([label, previous, current]) => <tr key={label}><th scope="row">{t(label)}</th><td>{number(previous)}</td><td>{number(current)}</td><td>{previous === undefined || current === undefined ? '—' : `${current > previous ? '+' : ''}${number(current - previous)}`}</td></tr>)}
+            </tbody></table></div><p className="cs-note">{t('differenceHelp')}</p>
             <h4>{t('evolution')}</h4>{'unavailable' in change ? <p>{t(change.unavailable!)}</p> : <><p className="cs-equation">{number(change.previous)} + ({number(change.prompt)}) − ({number(change.read)}) − ({number(change.write)}) = {number(change.current)}</p><p>{t('equation')}</p></>}
             <details><summary>{t('metadata')}</summary><JsonTree data={{ ...item.input, diagnosis: item.diagnosis }} label={t('metadata')} labels={jsonLabels} copyable /></details>
             <h4>{t('input')}</h4>
