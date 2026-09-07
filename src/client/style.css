@@ -16,3 +16,6 @@
 .cs-sidebar-anchor{display:block}.cs-sidebar-button{width:100%;justify-content:flex-start}.cs-dashboard [aria-pressed=true]{color:var(--dsw-alias-brand-primary)}.cs-dashboard [role=alert],.cs-settings [role=alert]{color:var(--dsw-alias-state-error-primary)}
 @media(max-width:900px){.cs-workspace{grid-template-columns:minmax(0,1fr)}.cs-call-list{max-height:240px}.cs-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.cs-metrics{grid-template-columns:minmax(0,1fr)}.cs-token-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.cs-call-list tbody tr{cursor:pointer}.cs-call-list tbody tr:hover{background:var(--dsw-alias-interactive-bg-hover)}.cs-call-list tbody tr:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.cs-comparison{overflow-x:auto}.cs-comparison table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;white-space:nowrap}.cs-comparison th,.cs-comparison td{padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l2);text-align:right}.cs-comparison th:first-child{text-align:left}.cs-comparison thead{color:var(--dsw-alias-label-secondary)}
