@@ -128,6 +128,33 @@ describe('native desktop UI', () => {
     assert.equal(cells(t('read')), 'Cache Read—90—')
     await unmount(); await ctx.root.fiber.dispose()
   })
+  it('shows input facts and methodology and jumps to available or unavailable input without changing selection', async () => {
+    const { ctx, diagnostics } = fixture(); const { scope } = scopeFixture()
+    const snapshot = diagnostics.snapshot()
+    globalThis.fetch = async url => new Response(JSON.stringify(String(url).includes('/input') ? diagnostics.input(new URL(String(url), 'http://localhost').searchParams.get('id')!) : snapshot))
+    let scrolled: Element | undefined
+    dom.window.HTMLElement.prototype.scrollIntoView = function(options) { assert.deepEqual(options, { block: 'start' }); scrolled = this }
+    await mount(<Dashboard scope={scope} t={t} />); await settle()
+    const value = (label: string) => Array.from(container.querySelectorAll('.cs-input-facts dt')).find(el => el.textContent === label)?.nextElementSibling?.textContent
+    const current = snapshot.attempts[0]!
+    assert.equal(value(t('stableMessages')), '1 / 1')
+    assert.equal(value(t('stableTools')), '0 / 0')
+    for (const key of ['configBytes', 'systemBytes', 'toolsBytes', 'messagesBytes', 'totalBytes'] as const) assert.equal(value(t(key)), current.input[key].toLocaleString())
+    assert.ok(container.querySelector('.cs-methodology')?.textContent?.includes(snapshot.notes.cacheEvidence))
+    assert.ok(container.querySelector('.cs-methodology')?.textContent?.includes(snapshot.notes.prefixEvidence))
+    assert.ok(container.querySelector('.cs-methodology')?.textContent?.includes(snapshot.notes.timingEvidence))
+    for (const captureInput of ['full', 'metadata'] as const) {
+      await act(async () => scope.set('captureInput', captureInput))
+      await click(t('viewInput'))
+      assert.equal(scrolled?.textContent, t('input')); assert.equal(document.activeElement, scrolled)
+      assert.match(container.querySelector('.cs-detail h3')!.textContent!, /call-2/)
+    }
+    await click('call-1'); await settle(); assert.equal(value(t('stableMessages')), t('notComparable'))
+    snapshot.attempts[1]!.diagnosis.kind = 'route-or-options-changed'
+    await click(t('refresh')); await settle(); assert.equal(value(t('stableTools')), t('notComparable'))
+    await click(t('focused')); await click(t('viewInput')); assert.equal(document.activeElement, scrolled)
+    await unmount(); await ctx.root.fiber.dispose()
+  })
   it('renders input failures, supports retry and switches the selected call', async () => {
     const { ctx, diagnostics } = fixture(); const { scope } = scopeFixture()
     let failed = true

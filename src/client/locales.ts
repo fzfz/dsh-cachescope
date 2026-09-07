@@ -1,4 +1,5 @@
 export const en = {
+  viewInput: 'View input', stableTools: 'Stable tools / total tools', stableMessages: 'Stable messages / total messages', notComparable: 'Cannot compare', messageCount: 'Message count', toolCount: 'Tool count', configBytes: 'Configuration bytes', systemBytes: 'System bytes', toolsBytes: 'Tools bytes', messagesBytes: 'Messages bytes', totalBytes: 'Total logical input bytes', methodology: 'How these statistics are measured',
   comparison: 'Previous and current call', previousCall: 'Previous call', currentCall: 'Current call', noPreviousCall: 'No previous call available', baselineEvicted: 'The previous call is no longer retained. Its values and differences are unavailable.', metric: 'Metric', previousValue: 'Previous value', currentValue: 'Current value', difference: 'Difference', differenceHelp: 'Difference = current − previous. A dash means the value is unavailable; missing values are not treated as zero.',
   title: 'CacheScope', close: 'Close', settings: 'CacheScope settings', recording: 'Record model calls',
   recordingHelp: 'Record cache usage, timing and input differences in this desktop process.',
@@ -36,6 +37,7 @@ export const en = {
 export type TextKey = keyof typeof en
 export type Translate = (key: TextKey) => string
 export const zh: Record<TextKey, string> = {
+  viewInput: '查看输入', stableTools: '稳定工具数 / 工具总数', stableMessages: '稳定消息数 / 消息总数', notComparable: '无法比较', messageCount: '消息数量', toolCount: '工具数量', configBytes: '配置字节数', systemBytes: 'System 字节数', toolsBytes: 'Tools 字节数', messagesBytes: 'Messages 字节数', totalBytes: '逻辑输入总字节数', methodology: '统计口径说明',
   comparison: '上一条与当前调用', previousCall: '上一条调用', currentCall: '当前调用', noPreviousCall: '没有可用于比较的上一条调用', baselineEvicted: '上一条调用已不再保留，无法显示其数值和差额。', metric: '指标', previousValue: '上一条值', currentValue: '当前值', difference: '差额', differenceHelp: '差额 = 当前值 − 上一条值。横线表示数值不可用，缺失值不按零计算。',
   title: 'CacheScope', close: '关闭', settings: 'CacheScope 设置', recording: '记录模型调用', recordingHelp: '在当前桌面进程中记录缓存用量、耗时和输入差异。',
   capture: '保留完整输入', captureHelp: '在调用数量和单次输入大小限制内保留完整输入。关闭后会清除已保留的输入正文。', logging: '向桌面日志写入调用摘要', loggingHelp: '每条摘要包含供应商、模型、缓存用量和耗时。',

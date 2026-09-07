@@ -19,6 +19,7 @@ const number = (value?: number) => value === undefined ? '—' : value.toLocaleS
 const percent = (value?: number) => value === undefined ? '—' : `${number(value * 100)}%`
 
 export function Dashboard({ scope, t }: { scope: SettingsScope; t: Translate }) {
+  const inputHeading = useRef<HTMLHeadingElement>(null)
   const [snapshot, setSnapshot] = useState<DiagnosticsSnapshot | null>(null)
   const [filters, setFilters] = useState<Filters>({ ...initialFilters })
   const [selected, setSelected] = useState<string | null>(null)
@@ -72,6 +73,7 @@ export function Dashboard({ scope, t }: { scope: SettingsScope; t: Translate }) 
 
   const summary = summarizeAttempts(visible)
   const selectCall = (id: string) => { setSelected(id); setFollow(false) }
+  const comparable = item && !['first-observation', 'route-or-options-changed'].includes(item.diagnosis.kind)
   const prior = attempts.find(a => a.id === item?.diagnosis.comparedTo)
   const change = evolution(item?.usage, prior?.usage)
   const dictionaryChoices = (keys: TextKey[]) => keys.map(key => [key, t(key)] as [string, string])
@@ -104,6 +106,7 @@ export function Dashboard({ scope, t }: { scope: SettingsScope; t: Translate }) 
       </div>
       <p className="cs-note">{t('evidenceNote')}</p>
       {!item ? <p className="cs-empty">{t('empty')}</p> : <>
+        <Button size="sm" onClick={() => { inputHeading.current?.scrollIntoView({ block: 'start' }); inputHeading.current?.focus({ preventScroll: true }) }}>{t('viewInput')}</Button>
         <Button size="sm" onClick={() => setFocused(!focused)}>{t(focused ? 'unfocus' : 'focused')}</Button>
         <div className="cs-workspace" data-focused={focused}>
           {!focused && <div className="cs-call-list"><table><thead><tr>{(['call', 'model', 'read', 'ttft', 'status'] as const).map(key => <th key={key}>{t(key)}</th>)}</tr></thead><tbody>{visible.map(call => <tr key={call.id} data-selected={item.id === call.id} aria-selected={item.id === call.id} tabIndex={0} onClick={() => selectCall(call.id)} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectCall(call.id) } }}><td><button type="button" aria-pressed={item.id === call.id} tabIndex={-1}>{call.id}</button></td><td>{call.model}</td><td>{percent(call.usage?.cacheReadRatio)}</td><td>{number(call.firstTokenMs)}</td><td>{t(call.status)}</td></tr>)}</tbody></table></div>}
@@ -111,6 +114,15 @@ export function Dashboard({ scope, t }: { scope: SettingsScope; t: Translate }) 
             <h3>{item.id} · {item.provider} / {item.model}</h3><p>{item.sessionId} · {t(item.purpose)} · {t(item.status)} · {new Date(item.startedAt).toLocaleString()}</p>
             <dl className="cs-token-grid">{([[ 'prompt', item.usage?.promptTokens ], ['read', item.usage?.cacheReadTokens], ['write', item.usage?.cacheWriteTokens], ['uncached', item.usage?.inputTokens], ['output', item.usage?.outputTokens], ['ttft', item.firstTokenMs], ['duration', item.durationMs]] as const).map(([label, value]) => <div key={label}><dt>{t(label)}</dt><dd>{value === undefined ? t('missing') : number(value)}</dd></div>)}</dl>
             <h4>{t('diagnosis')}</h4><p>{t(item.diagnosis.kind)}{item.diagnosis.comparedTo && ` · ${t('baseline')} ${item.diagnosis.comparedTo}`}</p>
+            <dl className="cs-token-grid cs-input-facts">
+              <div><dt>{t('stableTools')}</dt><dd>{comparable ? `${number(item.diagnosis.stableToolCount)} / ${number(item.input.toolCount)}` : t('notComparable')}</dd></div>
+              <div><dt>{t('stableMessages')}</dt><dd>{comparable ? `${number(item.diagnosis.stableMessageCount)} / ${number(item.input.messageCount)}` : t('notComparable')}</dd></div>
+              {([
+                ['messageCount', item.input.messageCount], ['toolCount', item.input.toolCount],
+                ['configBytes', item.input.configBytes], ['systemBytes', item.input.systemBytes],
+                ['toolsBytes', item.input.toolsBytes], ['messagesBytes', item.input.messagesBytes], ['totalBytes', item.input.totalBytes],
+              ] as const).map(([label, value]) => <div key={label}><dt>{t(label)}</dt><dd>{number(value)}</dd></div>)}
+            </dl>
             <h4>{t('comparison')}</h4>
             <p>{t('previousCall')}: {item.diagnosis.comparedTo ?? t('noPreviousCall')} → {t('currentCall')}: {item.id}</p>
             {item.diagnosis.comparedTo && !prior && <p>{t('baselineEvicted')}</p>}
@@ -127,7 +139,8 @@ export function Dashboard({ scope, t }: { scope: SettingsScope; t: Translate }) 
             </tbody></table></div><p className="cs-note">{t('differenceHelp')}</p>
             <h4>{t('evolution')}</h4>{'unavailable' in change ? <p>{t(change.unavailable!)}</p> : <><p className="cs-equation">{number(change.previous)} + ({number(change.prompt)}) − ({number(change.read)}) − ({number(change.write)}) = {number(change.current)}</p><p>{t('equation')}</p></>}
             <details><summary>{t('metadata')}</summary><JsonTree data={{ ...item.input, diagnosis: item.diagnosis }} label={t('metadata')} labels={jsonLabels} copyable /></details>
-            <h4>{t('input')}</h4>
+            <details className="cs-methodology"><summary>{t('methodology')}</summary><p>{snapshot.notes.cacheEvidence}</p><p>{snapshot.notes.prefixEvidence}</p><p>{t('evidenceNote')}</p><p>{snapshot.notes.timingEvidence}</p></details>
+            <h4 ref={inputHeading} tabIndex={-1}>{t('input')}</h4>
             {!canShowRaw ? <p>{t(item.rawState === 'available' ? 'disabled' : item.rawState)}</p> : rawError ? <p role="alert">{t(rawError)} <Button size="sm" onClick={() => setRetryInput(n => n + 1)}>{t('retry')}</Button></p> : raw?.id === item.id && raw.rawInput ? <InputInspector key={`${item.id}|${item.input.overallFingerprint}`} data={raw.rawInput} item={item} t={t} /> : raw ? <p>{t(raw.rawState)}</p> : <p>{t('loading')}</p>}
           </div>
         </div>
