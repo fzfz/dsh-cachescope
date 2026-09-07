@@ -114,6 +114,7 @@ export function Dashboard({ scope, t }: { scope: SettingsScope; t: Translate }) 
             <h3>{item.id} · {item.provider} / {item.model}</h3><p>{item.sessionId} · {t(item.purpose)} · {t(item.status)} · {new Date(item.startedAt).toLocaleString()}</p>
             <dl className="cs-token-grid">{([[ 'prompt', item.usage?.promptTokens ], ['read', item.usage?.cacheReadTokens], ['write', item.usage?.cacheWriteTokens], ['uncached', item.usage?.inputTokens], ['output', item.usage?.outputTokens], ['ttft', item.firstTokenMs], ['duration', item.durationMs]] as const).map(([label, value]) => <div key={label}><dt>{t(label)}</dt><dd>{value === undefined ? t('missing') : number(value)}</dd></div>)}</dl>
             <h4>{t('diagnosis')}</h4><p>{t(item.diagnosis.kind)}{item.diagnosis.comparedTo && ` · ${t('baseline')} ${item.diagnosis.comparedTo}`}</p>
+            <p className="cs-note">{t('stableCountsHelp')}</p>
             <dl className="cs-token-grid cs-input-facts">
               <div><dt>{t('stableTools')}</dt><dd>{comparable ? `${number(item.diagnosis.stableToolCount)} / ${number(item.input.toolCount)}` : t('notComparable')}</dd></div>
               <div><dt>{t('stableMessages')}</dt><dd>{comparable ? `${number(item.diagnosis.stableMessageCount)} / ${number(item.input.messageCount)}` : t('notComparable')}</dd></div>
